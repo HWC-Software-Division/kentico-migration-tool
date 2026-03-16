@@ -1,0 +1,17 @@
+bin/
+obj/
+/packages/
+riderModule.iml
+/_ReSharper.Caches/
+appsettings.local.json
+.idea/
+.vs/
+*.sln.DotSettings.user
+Migration.Tool.CLI/appsettings.local.json_
+.nuget/nuget.exe
+
+# MCP server definitions
+mcp.json
+claude_desktop_config.json
+mcp_config.json
+/Migration.Tool.CLI/appsettings.json
