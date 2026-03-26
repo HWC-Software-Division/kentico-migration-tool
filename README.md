@@ -18,3 +18,10 @@ We will use to custom the migration-tool for migrate Kentico 13 to Xperience by 
      - MediaFile.cs
    + KVAMigration.Tool.Source\Services
      - AssetFacade.cs
+
+4. Improved Firn migration conditions : support re-migrate case of multi workspace
+   + Migration.Tool.CLI\appsettings.json
+    "TargetWorkspaceName": "KenticoDefault" //Your Default channel name
+
+5. Improved Firn migration conditions : support Media file about AllowedContentTypes
+   + Migration.Tool.Extensions\DefaultMigrations\AssetMigration.cs  
