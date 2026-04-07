@@ -1,5 +1,7 @@
 using System.Xml.Linq;
 using System.Xml.XPath;
+using CMS.Core;
+using CMS.EventLog;
 
 using Microsoft.Extensions.Logging;
 
@@ -69,7 +71,8 @@ public class FormDefinitionPatcher
     private readonly ILogger logger;
     private readonly XDocument xDoc;
 
-    public FormDefinitionPatcher(ILogger logger,
+    public FormDefinitionPatcher(
+        ILogger logger,
         string formDefinitionXml,
         IFieldMigrationService fieldMigrationService,
         bool classIsForm,
@@ -91,14 +94,18 @@ public class FormDefinitionPatcher
         xDoc = XDocument.Parse(this.formDefinitionXml);
     }
 
-    public IEnumerable<string?> GetFieldNames() => xDoc.XPathSelectElements($"//{FieldElem}").Select(x => x.Attribute(FieldAttrColumn)?.Value);
+    public IEnumerable<string?> GetFieldNames() =>
+        xDoc.XPathSelectElements($"//{FieldElem}")
+            .Select(x => x.Attribute(FieldAttrColumn)?.Value);
 
     public void RemoveCategories()
     {
         var categories = (xDoc.Root?.XPathSelectElements($"//{CategoryElem}") ?? Enumerable.Empty<XElement>()).ToList();
+
         foreach (var xElement in categories)
         {
             string elementDescriptor = xElement.ToString();
+
             if (xElement.Attribute(FieldAttrName)?.Value is { } name)
             {
                 elementDescriptor = name;
@@ -116,14 +123,23 @@ public class FormDefinitionPatcher
         if (otherDoc.Root?.Elements() is { } elements)
         {
             var elementList = elements.ToList();
+
             foreach (var field in elementList)
             {
                 if (field.Attribute(FieldAttrColumn)?.Value is { } fieldToRemoveName)
                 {
-                    if (xDoc.XPathSelectElements($"//{FieldElem}[@column={fieldToRemoveName}]") is { } fieldToRemove)
+                    var fieldsToRemove = xDoc
+                        .XPathSelectElements($"//{FieldElem}[@column='{fieldToRemoveName}']")
+                        .ToList();
+
+                    if (fieldsToRemove.Count > 0)
                     {
                         logger.LogDebug("Field {FieldName} removed from definition", fieldToRemoveName);
-                        fieldToRemove.Remove();
+
+                        foreach (var fieldToRemove in fieldsToRemove)
+                        {
+                            fieldToRemove.Remove();
+                        }
                     }
                     else
                     {
@@ -143,18 +159,22 @@ public class FormDefinitionPatcher
         if (xDoc.Root?.Elements() is { } elements)
         {
             var elementList = elements.ToList();
+
             foreach (var fieldOrCategory in elementList)
             {
                 if (fieldOrCategory.Name == FieldElem)
                 {
-                    if (!(excludedFields ?? []).Any(ef => ef.Equals(fieldOrCategory.Attribute("column")?.Value, StringComparison.InvariantCultureIgnoreCase)))
+                    if (!(excludedFields ?? Array.Empty<string>()).Any(ef =>
+                            ef.Equals(fieldOrCategory.Attribute(FieldAttrColumn)?.Value, StringComparison.InvariantCultureIgnoreCase)))
                     {
                         PatchField(fieldOrCategory);
                     }
                 }
                 else if (fieldOrCategory.Name == CategoryElem)
                 {
-                    logger.LogDebug("Category '{Category}' skipped", fieldOrCategory.Attribute(CategoryAttrName)?.Value ?? "<no category name>");
+                    logger.LogDebug(
+                        "Category '{Category}' skipped",
+                        fieldOrCategory.Attribute(CategoryAttrName)?.Value ?? "<no category name>");
                 }
                 else
                 {
@@ -185,14 +205,31 @@ public class FormDefinitionPatcher
 
         string fieldDescriptor = (columnAttr ?? guidAttr)?.Value ?? "<no guid or column>";
 
-        // cleanup of no longer supported fields
-        foreach (var a in field.Attributes())
+        if (string.Equals(columnAttr?.Value, "PageInternalRedirectNodeGuid", StringComparison.InvariantCultureIgnoreCase))
+        {
+            var eventInfo = new EventLogInfo
+            {
+                Source = "MigrationTool",
+                EventCode = "FIELD_BEFORE_PATCH",
+                EventDescription = $"Field={columnAttr?.Value}, Visible={visibleAttr?.Value ?? "<null>"}, Enabled={enabledAttr?.Value ?? "<null>"}, ColumnType={columnTypeAttr?.Value ?? "<null>"}",
+                EventType = EventTypeEnum.Information.ToString()
+            };
+
+            EventLogProvider.LogEvent(eventInfo);
+        }
+
+        foreach (var a in field.Attributes().ToList())
         {
             string an = a.Name.ToString();
             if (!allowedFieldAttributes.Contains(an))
             {
+                logger.LogTrace(
+                    "Removing attribute '{AttributeName}'='{Value}' from field with column '{ColumnName}'",
+                    an,
+                    a.Value,
+                    columnAttr?.Value);
+
                 a.Remove();
-                logger.LogTrace("Removing attribute '{AttributeName}'='{Value}' from field with column '{ColumnName}'", an, a.Value, columnAttr?.Value);
             }
         }
 
@@ -215,51 +252,82 @@ public class FormDefinitionPatcher
             return;
         }
 
-
         var controlNameElem = field.XPathSelectElement($"{FieldElemSettings}/{SettingsElemControlname}");
         string? controlName = controlNameElem?.Value;
 
-        var fieldMigrationContext = new FieldMigrationContext(columnType, controlName, columnAttr?.Value, new EmptySourceObjectContext());
+        var fieldMigrationContext = new FieldMigrationContext(
+            columnType,
+            controlName,
+            columnAttr?.Value,
+            new EmptySourceObjectContext());
+
         switch (fieldMigrationService.GetFieldMigration(fieldMigrationContext, allowNullSourceFormControl))
         {
             case FieldMigration(_, var targetDataType, _, var targetFormComponent, var actions, _):
             {
-                logger.LogDebug("Field {FieldDescriptor} DataType: {SourceDataType} => {TargetDataType}", fieldDescriptor, columnType, targetDataType);
+                logger.LogDebug(
+                    "Field {FieldDescriptor} DataType: {SourceDataType} => {TargetDataType}",
+                    fieldDescriptor,
+                    columnType,
+                    targetDataType);
+
+                if (string.Equals(columnAttr?.Value, "PageInternalRedirectNodeGuid", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    var eventInfo = new EventLogInfo
+                    {
+                        Source = "MigrationTool",
+                        EventCode = "FIELD_BEFORE_PATCH",
+                        EventDescription = $"Field={columnAttr?.Value}, Visible={visibleAttr?.Value ?? "<null>"}, Enabled={enabledAttr?.Value ?? "<null>"}, ColumnType={columnTypeAttr?.Value ?? "<null>"}",
+                        EventType = EventTypeEnum.Information.ToString()
+                    };
+
+                    EventLogProvider.LogEvent(eventInfo);
+                }
+
                 columnTypeAttr?.SetValue(targetDataType);
+
                 switch (targetFormComponent)
                 {
                     case TfcDirective.DoNothing:
-                        logger.LogDebug("Field {FieldDescriptor} ControlName: Tca:{TcaDirective}", fieldDescriptor, targetFormComponent);
+                        logger.LogDebug(
+                            "Field {FieldDescriptor} ControlName: Tca:{TcaDirective}",
+                            fieldDescriptor,
+                            targetFormComponent);
                         PerformActionsOnField(field, fieldDescriptor, actions);
                         break;
+
                     case TfcDirective.Clear:
                         logger.LogDebug("Field {FieldDescriptor} ControlName: Tca:{TcaDirective}", fieldDescriptor, targetFormComponent);
                         field.RemoveNodes();
-                        visibleAttr?.SetValue(false);
                         break;
+
                     case TfcDirective.CopySourceControl:
                         logger.LogDebug("Field {FieldDescriptor} ControlName: Tca:{TcaDirective} => {ControlName}", fieldDescriptor, targetFormComponent, controlName);
                         controlNameElem?.SetValue(controlName!);
                         PerformActionsOnField(field, fieldDescriptor, actions);
                         break;
+
                     default:
                     {
                         logger.LogDebug("Field {FieldDescriptor} ControlName: Tca:NONE => from control '{ControlName}' => {TargetFormComponent}", fieldDescriptor, controlName, targetFormComponent);
                         controlNameElem?.SetValue(targetFormComponent!);
+
                         if (allowNullSourceFormControl)
                         {
-                            var settingsElement = field.EnsureElement("settings", s =>
-                                s.EnsureElement(SettingsElemControlname, cn => cn.Value = targetFormComponent!)
-                            );
-                            // set settings child node with controlname
+                            field.EnsureElement("settings", s =>
+                                s.EnsureElement(SettingsElemControlname, cn => cn.Value = targetFormComponent!));
+
                             field.SetAttributeValue(SettingsElemControlname, targetFormComponent);
                         }
+
                         PerformActionsOnField(field, fieldDescriptor, actions);
                         break;
                     }
                 }
+
                 break;
             }
+
             case { } fieldMigration when fieldMigration.ShallMigrate(fieldMigrationContext):
             {
                 fieldMigration.MigrateFieldDefinition(this, field, columnTypeAttr, fieldDescriptor);
@@ -273,6 +341,7 @@ public class FormDefinitionPatcher
         if (!classIsForm && !classIsDocumentType)
         {
             bool hasVisibleAttribute = visibleAttr != null;
+
             if (enabledAttr is { } enabled)
             {
                 enabled.Remove();
@@ -303,6 +372,7 @@ public class FormDefinitionPatcher
             foreach (var fieldChildNode in field.Elements().ToList())
             {
                 logger.LogDebug("Patching filed child '{FieldChildName}'", fieldChildNode.Name);
+
                 switch (fieldChildNode.Name.ToString())
                 {
                     case FieldElemProperties:
@@ -318,7 +388,6 @@ public class FormDefinitionPatcher
                         }
                         else
                         {
-                            // XbK Resource / Module class no longer supports visual representation
                             ClearSettings(fieldChildNode);
                         }
 
@@ -336,17 +405,39 @@ public class FormDefinitionPatcher
 
         if (classIsForm || classIsDocumentType)
         {
-            if (field.Attribute(FieldAttrVisible) is { } visible && field.Attribute(FieldAttrEnabled) is null)
+            if (field.Attribute(FieldAttrVisible) is { } visible)
             {
-                field.Add(new XAttribute(FieldAttrEnabled, visible.Value));
-                logger.LogDebug("Set field '{Field}' attribute '{Attribute}' to value '{Value}' from attribute '{SourceAttribute}'", fieldDescriptor, FieldAttrEnabled, visible, FieldAttrVisible);
+                field.SetAttributeValue(FieldAttrEnabled, visible.Value);
+                logger.LogDebug(
+                    "Set field '{Field}' attribute '{Attribute}' to value '{Value}' from attribute '{SourceAttribute}'",
+                    fieldDescriptor,
+                    FieldAttrEnabled,
+                    visible.Value,
+                    FieldAttrVisible);
             }
+        }
+
+        if (string.Equals(columnAttr?.Value, "PageInternalRedirectNodeGuid", StringComparison.InvariantCultureIgnoreCase))
+        {
+            field.SetAttributeValue(FieldAttrVisible, true);
+            field.SetAttributeValue(FieldAttrEnabled, true);
+
+            var eventInfo = new EventLogInfo
+            {
+                Source = "MigrationTool",
+                EventCode = "FIELD_BEFORE_PATCH",
+                EventDescription = $"Field={columnAttr?.Value}, Visible={visibleAttr?.Value ?? "<null>"}, Enabled={enabledAttr?.Value ?? "<null>"}, ColumnType={columnTypeAttr?.Value ?? "<null>"}",
+                EventType = EventTypeEnum.Information.ToString()
+            };
+
+            EventLogProvider.LogEvent(eventInfo);
         }
     }
 
     private void ClearSettings(XElement settingsElem)
     {
         var elementsToRemove = settingsElem.Elements().ToList();
+
         foreach (var element in elementsToRemove)
         {
             logger.LogDebug("Removing settings element '{ElementName}'", element.Name);
@@ -377,7 +468,6 @@ public class FormDefinitionPatcher
         }
     }
 
-
     private void PatchProperties(XElement properties)
     {
         var elementsToRemove = properties.Elements()
@@ -407,6 +497,7 @@ public class FormDefinitionPatcher
         foreach (string action in actions)
         {
             logger.LogDebug("Field {FieldDescriptor} Action: {Action}", fieldDescriptor, action);
+
             switch (action)
             {
                 case TcaDirective.ClearSettings:
@@ -427,12 +518,11 @@ public class FormDefinitionPatcher
                 }
                 case TcaDirective.ConvertToPages:
                 {
-                    field
-                        .EnsureElement(FieldElemSettings, settings =>
-                        {
-                            settings.EnsureElement(SettingsMaximumpages, maxAssets => maxAssets.Value = SettingsMaximumpagesFallback);
-                            settings.EnsureElement(SettingsRootpath, maxAssets => maxAssets.Value = SettingsRootpathFallback);
-                        });
+                    field.EnsureElement(FieldElemSettings, settings =>
+                    {
+                        settings.EnsureElement(SettingsMaximumpages, maxAssets => maxAssets.Value = SettingsMaximumpagesFallback);
+                        settings.EnsureElement(SettingsRootpath, maxAssets => maxAssets.Value = SettingsRootpathFallback);
+                    });
 
                     field.SetAttributeValue(FieldAttrSize, FieldAttrSizeZero);
 
@@ -445,10 +535,10 @@ public class FormDefinitionPatcher
                 case TcaDirective.ConvertToRichText:
                 {
                     field
-                        .EnsureElement(FieldElemSettings, settings => settings.EnsureElement("ConfigurationName", e => e.Value = "Kentico.Administration.StructuredContent"));
+                        .EnsureElement(FieldElemSettings, settings =>
+                            settings.EnsureElement("ConfigurationName", e => e.Value = "Kentico.Administration.StructuredContent"));
                     break;
                 }
-                // ReSharper disable once RedundantEmptySwitchSection - not redundant, IDE0010 required to specify default switch branch
                 default:
                 {
                     break;

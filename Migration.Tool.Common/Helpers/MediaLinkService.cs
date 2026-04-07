@@ -230,7 +230,10 @@ public class MediaLinkService(
                 }
             }
         }
-
+        if (inspectionIndex < 0 || inspectionIndex >= spl.Length)
+        {
+            return MatchMediaLinkResult.None;
+        }
         if (mediaLinkKind == MediaLinkKind.None || mediaKind == MediaKind.None)
         {
             return MatchMediaLinkResult.None;

@@ -28,14 +28,14 @@ public interface IFieldMigration
     /// <summary>
     /// custom migrations are sorted by this number, first encountered migration wins. Values higher than 100 000 are set to default migrations, set number bellow 100 000 for custom migrations
     /// </summary>
-    int Rank { get; }
+    public int Rank { get; }
 
     /// <summary>
     /// Methods determines if this migration is usable in context 
     /// </summary>
     /// <param name="context">Expect multiple context types: <see cref="FieldMigrationContext"/> for pages, <see cref="EmptySourceObjectContext"/> for data class</param>
     /// <returns></returns>
-    bool ShallMigrate(FieldMigrationContext context);
+    public bool ShallMigrate(FieldMigrationContext context);
 
     /// <summary>
     /// Performs migration of FormField, result is mutated property field
@@ -44,14 +44,14 @@ public interface IFieldMigration
     /// <param name="field">Field for migration</param>
     /// <param name="columnTypeAttr">field type - in xml "columntype"</param>
     /// <param name="fieldDescriptor">field name or field GUID if field name is not specified</param>
-    void MigrateFieldDefinition(FormDefinitionPatcher formDefinitionPatcher, XElement field, XAttribute? columnTypeAttr, string fieldDescriptor);
+    public void MigrateFieldDefinition(FormDefinitionPatcher formDefinitionPatcher, XElement field, XAttribute? columnTypeAttr, string fieldDescriptor);
     /// <summary>
     /// Performs migration of field value
     /// </summary>
     /// <param name="sourceValue">Value from source instance for migration directly from database reader (DBNull may be encountered)</param>
     /// <param name="context">Context <see cref="FieldMigrationContext"/> for pages</param>
     /// <returns>If migration of field succeeds, returns success and migrated value. If not, returns false as success and null reference as value</returns>
-    Task<FieldMigrationResult> MigrateValue(object? sourceValue, FieldMigrationContext context);
+    public Task<FieldMigrationResult> MigrateValue(object? sourceValue, FieldMigrationContext context);
 }
 
 public record FieldMigration(string SourceDataType, string TargetDataType, string SourceFormControl, string? TargetFormComponent, string[]? Actions = null, Regex? FieldNameRegex = null) : IFieldMigration
@@ -121,8 +121,24 @@ public static class FieldMappingInstance
             new FieldMigration(KsFieldDataType.Date, FieldDataType.Date, SfcDirective.CatchAnyNonMatching, FormComponents.AdminDateInputComponent),
             new FieldMigration(KsFieldDataType.TimeSpan, FieldDataType.TimeSpan, SfcDirective.CatchAnyNonMatching, FormComponents.AdminTextInputComponent),
             new FieldMigration(KsFieldDataType.Boolean, FieldDataType.Boolean, SfcDirective.CatchAnyNonMatching, FormComponents.AdminCheckBoxComponent),
-            new FieldMigration(KsFieldDataType.Guid, FieldDataType.ContentItemReference, "RelatedDocuments", FormComponents.AdminContentItemSelectorComponent, [TcaDirective.ConvertToPages]),
-            new FieldMigration(KsFieldDataType.Guid, FieldDataType.Guid, SfcDirective.CatchAnyNonMatching, TfcDirective.Clear),
+            //new FieldMigration(KsFieldDataType.Guid, FieldDataType.ContentItemReference, "RelatedDocuments", FormComponents.AdminContentItemSelectorComponent, [TcaDirective.ConvertToPages]),
+            // GUID ??????? -> Pages
+//new FieldMigration(
+//    KsFieldDataType.Guid,
+//    FieldDataType.ContentItemReference,
+//    SfcDirective.CatchAnyNonMatching,
+//    FormComponents.AdminContentItemSelectorComponent,
+//    [TcaDirective.ConvertToPages]
+//),
+new FieldMigration(
+    KsFieldDataType.Guid,
+    FieldDataType.WebPages,
+    SfcDirective.CatchAnyNonMatching,
+    FormComponents.Kentico_Xperience_Admin_Websites_WebPageSelectorComponent,
+    [TcaDirective.ConvertToPages]
+),
+//new FieldMigration(KsFieldDataType.Guid, FieldDataType.ContentItemReference, SfcDirective.CatchAnyNonMatching, FormComponents.Kentico_Xperience_Admin_Websites_WebPageSelectorComponent, [TcaDirective.ConvertToPages]),
+            //new FieldMigration(KsFieldDataType.Guid, FieldDataType.Guid, SfcDirective.CatchAnyNonMatching, TfcDirective.Clear),
             new FieldMigration(KsFieldDataType.Binary, FieldDataType.Binary, SfcDirective.CatchAnyNonMatching, TfcDirective.Clear),
             new FieldMigration(KsFieldDataType.Xml, FieldDataType.Xml, SfcDirective.CatchAnyNonMatching, FormComponents.AdminNumberWithLabelComponent),
             new FieldMigration(KsFieldDataType.DocRelationships, FieldDataType.ContentItemReference, SfcDirective.CatchAnyNonMatching, FormComponents.AdminContentItemSelectorComponent, [TcaDirective.ConvertToPages]),

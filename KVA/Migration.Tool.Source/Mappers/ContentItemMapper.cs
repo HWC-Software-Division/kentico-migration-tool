@@ -903,30 +903,85 @@ public class ContentItemMapper(
                 var documentSourceObjectContext = sourceObjectContext as DocumentSourceObjectContext;
                 if (controlName != null)
                 {
+                    //if ((fieldMigration.Actions?.Contains(TcaDirective.ConvertToPages) ?? false) && documentSourceObjectContext != null)
+                    //{
+                    //    // relation to other document
+                    //    var relations = relationshipService.GetNodeRelationships(documentSourceObjectContext.CmsTree.NodeID, sourceNodeClass.ClassName, field.Guid);
+
+                    //    var relatedItems = new List<ContentItemReference>();
+                    //    foreach (var relation in relations)
+                    //    {
+                    //        if (relation.RightNode is not null)
+                    //        {
+                    //            EnsureAllowedType(targetClassName, newFormInfo, targetFieldName, relation.RightNode.NodeClassID);
+                    //            relatedItems.Add(new ContentItemReference
+                    //            {
+                    //                Identifier = spoiledGuidContext.EnsureNodeGuid(relation.RightNode!.NodeGUID, relation.RightNode.NodeSiteID, relation.RightNode.NodeID)
+                    //            });
+                    //        }
+                    //    }
+                    //    target.SetValueAsJson(targetFieldName, relatedItems.ToArray());
+                    //}
+                    //else
+                    //{
+                    //    // leave as is
+                    //    target[targetFieldName] = valueConvertor.Invoke(sourceValue, convertorContext);
+                    //}
+
+                    // ----- New Version -------------- //
                     if ((fieldMigration.Actions?.Contains(TcaDirective.ConvertToPages) ?? false) && documentSourceObjectContext != null)
                     {
-                        // relation to other document
-                        var relations = relationshipService.GetNodeRelationships(documentSourceObjectContext.CmsTree.NodeID, sourceNodeClass.ClassName, field.Guid);
-
-                        var relatedItems = new List<ContentItemReference>();
-                        foreach (var relation in relations)
+                        // GUID field -> Page selector value
+                        if (sourceValue != null &&
+                            sourceValue != DBNull.Value &&
+                            Guid.TryParse(sourceValue.ToString(), out var sourceGuid))
                         {
-                            if (relation.RightNode is not null)
+                            var patchedGuid = spoiledGuidContext.EnsureNodeGuid(
+                                sourceGuid,
+                                documentSourceObjectContext.CmsTree.NodeSiteID
+                            );
+
+                            var pageReferences = new[]
                             {
-                                EnsureAllowedType(targetClassName, newFormInfo, targetFieldName, relation.RightNode.NodeClassID);
-                                relatedItems.Add(new ContentItemReference
-                                {
-                                    Identifier = spoiledGuidContext.EnsureNodeGuid(relation.RightNode!.NodeGUID, relation.RightNode.NodeSiteID, relation.RightNode.NodeID)
-                                });
-                            }
+            new
+            {
+                WebPageGuid = patchedGuid
+            }
+        };
+
+                            target.SetValueAsJson(targetFieldName, pageReferences);
                         }
-                        target.SetValueAsJson(targetFieldName, relatedItems.ToArray());
+                        else
+                        {
+                            // relation field
+                            var relations = relationshipService.GetNodeRelationships(
+                                documentSourceObjectContext.CmsTree.NodeID,
+                                sourceNodeClass.ClassName,
+                                field.Guid
+                            );
+
+                            var pageReferences = new List<object>();
+                            foreach (var relation in relations)
+                            {
+                                if (relation.RightNode is not null)
+                                {
+                                    EnsureAllowedType(targetClassName, newFormInfo, targetFieldName, relation.RightNode.NodeClassID);
+
+                                    pageReferences.Add(new
+                                    {
+                                        WebPageGuid = spoiledGuidContext.EnsureNodeGuid(
+                                            relation.RightNode.NodeGUID,
+                                            relation.RightNode.NodeSiteID,
+                                            relation.RightNode.NodeID
+                                        )
+                                    });
+                                }
+                            }
+
+                            target.SetValueAsJson(targetFieldName, pageReferences.ToArray());
+                        }
                     }
-                    else
-                    {
-                        // leave as is
-                        target[targetFieldName] = valueConvertor.Invoke(sourceValue, convertorContext);
-                    }
+                    // ----- New Version -------------- //
 
                     if (fieldMigration.TargetFormComponent == "webpages" && documentSourceObjectContext != null)
                     {

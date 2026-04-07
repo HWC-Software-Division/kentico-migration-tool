@@ -220,11 +220,27 @@ public class MigratePageTypesCommandHandler(
                 (var dataClassInfo, bool newInstance) = mapped;
                 ArgumentNullException.ThrowIfNull(dataClassInfo, nameof(dataClassInfo));
 
+                //if (reusableSchemaService.IsConversionToReusableFieldSchemaRequested(dataClassInfo.ClassName))
+                //{
+                //    dataClassInfo = reusableSchemaService.ConvertToReusableSchema(dataClassInfo, dataClassInfo.ClassName,
+                //        dataClassInfo.ClassDisplayName);
+                //}
                 if (reusableSchemaService.IsConversionToReusableFieldSchemaRequested(dataClassInfo.ClassName))
                 {
-                    dataClassInfo = reusableSchemaService.ConvertToReusableSchema(dataClassInfo, dataClassInfo.ClassName,
+                    dataClassInfo = reusableSchemaService.ConvertToReusableSchema(
+                        dataClassInfo,
+                        dataClassInfo.ClassName,
                         dataClassInfo.ClassDisplayName);
                 }
+                if (reusableSchemaService.IsConversionToReusableFieldSchemaRequested(dataClassInfo.ClassName))
+                {
+                    dataClassInfo = reusableSchemaService.ConvertToReusableSchema(
+                        dataClassInfo,
+                        dataClassInfo.ClassName,
+                        dataClassInfo.ClassDisplayName);
+                }
+                dataClassInfo.SetValue("ClassInheritsFromClassID", null);
+                dataClassInfo.SetValue("ClassInheritsFromClass", null);
 
                 kxpClassFacade.SetClass(dataClassInfo);
 
