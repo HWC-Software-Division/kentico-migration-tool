@@ -445,6 +445,10 @@ public class AssetMigration(
 
     public void MigrateFieldDefinition(FormDefinitionPatcher formDefinitionPatcher, XElement field, XAttribute? columnTypeAttr, string fieldDescriptor)
     {
+        logger.LogInformation("MigrateFieldDefinition - fieldName: '{Value}'", field);
+        logger.LogInformation("MigrateFieldDefinition - columnTypeAttr: '{Value}'", columnTypeAttr);
+        logger.LogInformation("MigrateFieldDefinition - fieldDescriptor: '{Value}'", fieldDescriptor);
+
         columnTypeAttr?.SetValue(configuration.MigrateMediaToMediaLibrary
 #pragma warning disable CS0618 // Type or member is obsolete
             ? FieldDataType.Assets
@@ -460,8 +464,51 @@ public class AssetMigration(
         else
         {
             settings.EnsureElement(FormDefinitionPatcher.SettingsElemControlname, e => e.Value = FormComponents.AdminContentItemSelectorComponent);
+
+            //KC 20260331- Determine allowed content types based on field name to prevent misconfiguration, for example allowing content item references for image fields that should only allow media files. This is based on the convention of including "image", "thumbnail" or "teaser" in the field name for image fields, and "file", "download" or "attachment" for file fields. If none of these keywords are present, all asset-related content item types will be allowed as a fallback (this is to prevent migration failure in case of unexpected field naming, but still allow correct configuration for most cases). 
+            var fieldName = (fieldDescriptor ?? "").ToLower();
+            var columnType = columnTypeAttr?.Value?.ToLower() ?? "";
+
+            Guid[] allowedContentTypes;
+
+            if (fieldName.Contains("file", StringComparison.OrdinalIgnoreCase)
+                || fieldName.Contains("upload", StringComparison.OrdinalIgnoreCase)
+                || fieldName.Contains("pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                allowedContentTypes =
+                [
+                    AssetFacade.LegacyAttachmentContentType.ClassGUID!.Value
+                ];
+
+                logger.LogInformation("✅ FILE FIELD: {Field}", fieldDescriptor);
+            }
+            else if (fieldName.Contains("Image", StringComparison.OrdinalIgnoreCase)
+                  || fieldName.Contains("Thumbnail", StringComparison.OrdinalIgnoreCase)
+                  || fieldName.Contains("Banner", StringComparison.OrdinalIgnoreCase)
+                  || fieldName.Contains("Teaser", StringComparison.OrdinalIgnoreCase)
+                  || fieldName.Contains("Logo", StringComparison.OrdinalIgnoreCase))
+            {
+                allowedContentTypes =
+                [
+                    AssetFacade.LegacyMediaFileContentType.ClassGUID!.Value
+                ];
+
+                logger.LogInformation("IMAGE FIELD: {Field}", fieldDescriptor);
+            }
+            else
+            {
+                allowedContentTypes =
+                [
+                    AssetFacade.LegacyMediaFileContentType.ClassGUID!.Value,
+                    AssetFacade.LegacyMediaLinkContentType.ClassGUID!.Value,
+                    AssetFacade.LegacyAttachmentContentType.ClassGUID!.Value
+                ];
+
+                logger.LogInformation("DEFAULT FIELD: {Field}", fieldDescriptor);
+            }
+
             //Guid[] allowedContentTypes = [AssetFacade.LegacyMediaFileContentType.ClassGUID!.Value, AssetFacade.LegacyMediaLinkContentType.ClassGUID!.Value, AssetFacade.LegacyAttachmentContentType.ClassGUID!.Value];
-            Guid[] allowedContentTypes = [AssetFacade.LegacyMediaFileContentType.ClassGUID!.Value];
+            //Guid[] allowedContentTypes = [AssetFacade.LegacyMediaFileContentType.ClassGUID!.Value];
             settings.EnsureElement(FormDefinitionPatcher.AllowedContentItemTypeIdentifiers, e => e.Value = JsonConvert.SerializeObject(allowedContentTypes.Select(x => x.ToString()).ToArray()));
         }
     }
