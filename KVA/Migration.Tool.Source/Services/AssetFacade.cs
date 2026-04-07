@@ -133,8 +133,7 @@ public class AssetFacade(
             {
                 [LegacyMediaFileTitleField.Column!] = mediaFile.FileTitle,
                 [LegacyMediaFileDescriptionField.Column!] = mediaFile.FileDescription,
-                //[LegacyMediaFileReleaseDateField.Column!] = mediaFile.ReleaseDate,
-
+                [LegacyMediaFileReleaseDateField.Column!] = mediaFile.ReleaseDate,
             };
 
             var releaseDate = mediaFile.ReleaseDate;
@@ -149,8 +148,7 @@ public class AssetFacade(
                 {
                     ContentItemGuid = translatedMediaGuid,
                     Identifier = GuidHelper.CreateAssetGuid(translatedMediaGuid, contentLanguageName),
-                    Name =
-                        Path.GetFileNameWithoutExtension(mediaFile.FileName) + mediaFile.FileExtension,
+                    Name = Path.GetFileNameWithoutExtension(mediaFile.FileName) + mediaFile.FileExtension,
                     Extension = mediaFile.FileExtension,
                     Size = null,
                     LastModified = null,

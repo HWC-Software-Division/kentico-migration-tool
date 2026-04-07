@@ -22,6 +22,7 @@ using Migration.Tool.Source.Mappers;
 using Migration.Tool.Source.Model;
 using Migration.Tool.Source.Providers;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Migration.Tool.Source.Handlers;
 
@@ -152,12 +153,34 @@ public class MigrateCustomTablesHandler(
 
                     XNamespace nsSchema = "http://www.w3.org/2001/XMLSchema";
                     XNamespace msSchema = "urn:schemas-microsoft-com:xml-msdata";
-                    var xDoc = XDocument.Parse(xbkDataClass.ClassXmlSchema);
-                    var autoIncrementColumns = xDoc.Descendants(nsSchema + "element")
-                        .Where(x => x.Attribute(msSchema + "AutoIncrement")?.Value == "true")
-                        .Select(x => x.Attribute("name")?.Value).ToImmutableHashSet();
 
-                    Debug.Assert(autoIncrementColumns.Count == 1, "autoIncrementColumns.Count == 1");
+                    //var xDoc = XDocument.Parse(xbkDataClass.ClassXmlSchema);
+                    XDocument? xDoc = null;
+
+                    try
+                    {
+                        xDoc = string.IsNullOrWhiteSpace(xbkDataClass.ClassXmlSchema)
+                            ? null : XDocument.Parse(xbkDataClass.ClassXmlSchema);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Invalid XML schema for class {ClassName}", xbkDataClass.ClassName);
+                    }
+
+                    var autoIncrementColumns = xDoc?.Descendants(nsSchema + "element")
+                        .Where(x => x.Attribute(msSchema + "AutoIncrement")?.Value == "true")
+                        .Select(x => x.Attribute("name")?.Value).ToImmutableHashSet()
+                        ?? ImmutableHashSet<string>.Empty;
+
+                    //Debug.Assert(autoIncrementColumns.Count == 1, "autoIncrementColumns.Count == 1");
+                    if (autoIncrementColumns.Count != 1)
+                    {
+                        logger.LogWarning(
+                            "Class {ClassName} has {Count} auto increment columns (expected 1).",
+                            xbkDataClass.ClassName,
+                            autoIncrementColumns.Count
+                        );
+                    }
                     var r = (xbkDataClass.ClassTableName, xbkDataClass.ClassGUID, autoIncrementColumns);
                     logger.LogTrace("Class '{ClassGuild}' Resolved as: {Result}", ksClass.ClassGUID, r);
 
