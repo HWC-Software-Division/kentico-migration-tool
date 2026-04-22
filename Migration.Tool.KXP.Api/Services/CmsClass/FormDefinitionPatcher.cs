@@ -468,25 +468,42 @@ public class FormDefinitionPatcher
         }
     }
 
+    //private void PatchProperties(XElement properties)
+    //{
+    //    var elementsToRemove = properties.Elements()
+    //        .Where(element => !new string[] { PropertiesElemDefaultvalue, PropertiesElemFieldcaption }.Any(x => element.Name == x))
+    //        .ToList();
+
+    //    foreach (var element in elementsToRemove)
+    //    {
+    //        logger.LogDebug("Removing properties element '{ElementName}'", element.Name);
+    //        element.Remove();
+    //    }
+
+    //    if (!properties.Elements().Any())
+    //    {
+    //        logger.LogDebug("Properties element is empty => removing");
+    //        properties.Remove();
+    //    }
+    //}
     private void PatchProperties(XElement properties)
     {
+        var allowed = new string[]
+        {
+        PropertiesElemDefaultvalue,
+        PropertiesElemFieldcaption,
+        "DataSource"
+        };
+
         var elementsToRemove = properties.Elements()
-            .Where(element => !new string[] { PropertiesElemDefaultvalue, PropertiesElemFieldcaption }.Any(x => element.Name == x))
+            .Where(element => !allowed.Contains(element.Name.ToString()))
             .ToList();
 
         foreach (var element in elementsToRemove)
         {
-            logger.LogDebug("Removing properties element '{ElementName}'", element.Name);
             element.Remove();
         }
-
-        if (!properties.Elements().Any())
-        {
-            logger.LogDebug("Properties element is empty => removing");
-            properties.Remove();
-        }
     }
-
     private void PerformActionsOnField(XElement field, string fieldDescriptor, string[]? actions)
     {
         if (actions == null)
@@ -537,6 +554,40 @@ public class FormDefinitionPatcher
                     field
                         .EnsureElement(FieldElemSettings, settings =>
                             settings.EnsureElement("ConfigurationName", e => e.Value = "Kentico.Administration.StructuredContent"));
+                    break;
+                }
+                case "ConvertDropdownOptions":
+                {
+                    var dataSource = field
+                        .Element(FieldElemProperties)?
+                        .Element("DataSource")?.Value;
+
+                    if (!string.IsNullOrWhiteSpace(dataSource))
+                    {
+                        var options = dataSource
+                            .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(x =>
+                            {
+                                var parts = x.Split(';');
+                                return new
+                                {
+                                    value = parts.Length > 0 ? parts[0].Trim() : "",
+                                    text = parts.Length > 1 ? parts[1].Trim() : parts[0].Trim()
+                                };
+                            })
+                            .ToList();
+
+                        // ?? convert ???? JSON string
+                        var json = System.Text.Json.JsonSerializer.Serialize(options);
+
+                        // ?? ??????? settings ??? field
+                        var settings = field.EnsureElement(FieldElemSettings);
+
+                        settings.SetElementValue("Options", json);
+
+                        logger.LogInformation("Converted DataSource to dropdown options for field '{Field}'", fieldDescriptor);
+                    }
+
                     break;
                 }
                 default:
