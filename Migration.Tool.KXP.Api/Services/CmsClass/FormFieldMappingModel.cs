@@ -137,6 +137,9 @@ new FieldMigration(
     FormComponents.Kentico_Xperience_Admin_Websites_WebPageSelectorComponent,
     [TcaDirective.ConvertToPages]
 ),
+//fix
+new FieldMigration(KsFieldDataType.Integer,FieldDataType.Text,FcText.DropDownListControl,FormComponents.AdminDropDownComponent
+),
 //new FieldMigration(KsFieldDataType.Guid, FieldDataType.ContentItemReference, SfcDirective.CatchAnyNonMatching, FormComponents.Kentico_Xperience_Admin_Websites_WebPageSelectorComponent, [TcaDirective.ConvertToPages]),
             //new FieldMigration(KsFieldDataType.Guid, FieldDataType.Guid, SfcDirective.CatchAnyNonMatching, TfcDirective.Clear),
             new FieldMigration(KsFieldDataType.Binary, FieldDataType.Binary, SfcDirective.CatchAnyNonMatching, TfcDirective.Clear),
