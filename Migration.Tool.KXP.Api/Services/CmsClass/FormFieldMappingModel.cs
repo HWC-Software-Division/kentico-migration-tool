@@ -107,8 +107,21 @@ public static class FieldMappingInstance
             new FieldMigration(KsFieldDataType.Text, FieldDataType.Text, FcText.RadioButtonsControl, FormComponents.AdminRadioGroupComponent),
             new FieldMigration(KsFieldDataType.Text, FieldDataType.Text, FcText.TextAreaControl, FormComponents.AdminTextAreaComponent),
             new FieldMigration(KsFieldDataType.Text, FieldDataType.Text, SfcDirective.CatchAnyNonMatching, FormComponents.AdminTextInputComponent),
-            new FieldMigration(KsFieldDataType.LongText, FieldDataType.RichTextHTML, FcLongText.HtmlAreaControl, FormComponents.AdminRichTextEditorComponent, [TcaDirective.ConvertToRichText]),
-            new FieldMigration(KsFieldDataType.RichTextHTML, FieldDataType.RichTextHTML, FcLongText.KenticoAdministrationRichTextEditor, FormComponents.AdminRichTextEditorComponent, [TcaDirective.ConvertToRichText]),
+            //new FieldMigration(KsFieldDataType.LongText, FieldDataType.RichTextHTML, FcLongText.HtmlAreaControl, FormComponents.AdminRichTextEditorComponent, [TcaDirective.ConvertToRichText]),
+            //new FieldMigration(KsFieldDataType.RichTextHTML, FieldDataType.RichTextHTML, FcLongText.KenticoAdministrationRichTextEditor, FormComponents.AdminRichTextEditorComponent, [TcaDirective.ConvertToRichText]),
+            //Fix RichText and LongText
+            new FieldMigration(
+                KsFieldDataType.RichTextHTML,
+                FieldDataType.Text,
+                FcLongText.KenticoAdministrationRichTextEditor,
+                FormComponents.AdminTextAreaComponent
+            ),
+            new FieldMigration(
+                KsFieldDataType.LongText,
+                FieldDataType.Text,
+                FcLongText.HtmlAreaControl,
+                FormComponents.AdminTextAreaComponent
+            ),
             new FieldMigration(KsFieldDataType.LongText, FieldDataType.LongText, FcLongText.TextBoxControl, FormComponents.AdminTextInputComponent),
             new FieldMigration(KsFieldDataType.LongText, FieldDataType.LongText, FcLongText.DropDownListControl, FormComponents.AdminDropDownComponent),
             new FieldMigration(KsFieldDataType.LongText, FieldDataType.LongText, FcLongText.TextAreaControl, FormComponents.AdminTextAreaComponent),
@@ -122,7 +135,7 @@ public static class FieldMappingInstance
             new FieldMigration(KsFieldDataType.TimeSpan, FieldDataType.TimeSpan, SfcDirective.CatchAnyNonMatching, FormComponents.AdminTextInputComponent),
             new FieldMigration(KsFieldDataType.Boolean, FieldDataType.Boolean, SfcDirective.CatchAnyNonMatching, FormComponents.AdminCheckBoxComponent),
             //new FieldMigration(KsFieldDataType.Guid, FieldDataType.ContentItemReference, "RelatedDocuments", FormComponents.AdminContentItemSelectorComponent, [TcaDirective.ConvertToPages]),
-            // GUID ??????? -> Pages
+            // fix GUID -> Pages
 //new FieldMigration(
 //    KsFieldDataType.Guid,
 //    FieldDataType.ContentItemReference,
@@ -137,9 +150,10 @@ new FieldMigration(
     FormComponents.Kentico_Xperience_Admin_Websites_WebPageSelectorComponent,
     [TcaDirective.ConvertToPages]
 ),
-//fix
+//fix Integer
 new FieldMigration(KsFieldDataType.Integer,FieldDataType.Text,FcText.DropDownListControl,FormComponents.AdminDropDownComponent
 ),
+
 //new FieldMigration(KsFieldDataType.Guid, FieldDataType.ContentItemReference, SfcDirective.CatchAnyNonMatching, FormComponents.Kentico_Xperience_Admin_Websites_WebPageSelectorComponent, [TcaDirective.ConvertToPages]),
             //new FieldMigration(KsFieldDataType.Guid, FieldDataType.Guid, SfcDirective.CatchAnyNonMatching, TfcDirective.Clear),
             new FieldMigration(KsFieldDataType.Binary, FieldDataType.Binary, SfcDirective.CatchAnyNonMatching, TfcDirective.Clear),
