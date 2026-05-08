@@ -89,7 +89,9 @@ public class CmsClassMapper(
         target.ClassConnectionString = source.ClassConnectionString;
         target.ClassDefaultObjectType = source.ClassDefaultObjectType;
         target.ClassCodeGenerationSettings = source.ClassCodeGenerationSettings;
-        target.ClassIconClass = source.ClassIconClass;
+        target.ClassIconClass = source.ClassIconClass is { } iconClass && iconClass.StartsWith("icon-", StringComparison.OrdinalIgnoreCase)
+            ? "xp-" + iconClass["icon-".Length..]
+            : source.ClassIconClass;
         if (source.ClassIsDocumentType)
         {
             target.ClassWebPageHasUrl = source switch
@@ -334,6 +336,12 @@ public class CmsClassMapper(
             }
 
             Debug.WriteLineIf(oldPrimaryKeyName == null, $"WARN: old PK is null for class '{dataClass.ClassName}'");
+
+            foreach (var item in nfi.ItemsList.OfType<FormFieldInfo>().Where(f => !string.IsNullOrWhiteSpace(f.VisibilityConditionConfigurationXmlData)).ToList())
+            {
+                item.AllowEmpty = true;
+                nfi.UpdateFormField(item.Name, item);
+            }
 
             foreach (var field in GetLegacyMetadataFields(version, includedMetadata))
             {

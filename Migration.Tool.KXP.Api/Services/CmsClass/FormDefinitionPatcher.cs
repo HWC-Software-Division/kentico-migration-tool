@@ -1,7 +1,8 @@
-using System.Xml.Linq;
+﻿using System.Xml.Linq;
 using System.Xml.XPath;
 using CMS.Core;
 using CMS.EventLog;
+using System.Text.RegularExpressions;
 
 using Microsoft.Extensions.Logging;
 
@@ -36,6 +37,8 @@ public class FormDefinitionPatcher
     public const string SettingsMaximumpagesFallback = "99";
     public const string SettingsRootpath = "RootPath";
     public const string SettingsRootpathFallback = "/";
+    public const string PropertiesElemVisiblemacro = "visiblemacro";
+    public const string FieldElemVisibilityConditionData = "visibilityconditiondata";
 
     private readonly IReadOnlySet<string> allowedFieldAttributes = new HashSet<string>([
         // taken from FormFieldInfo.GetAttributes() method
@@ -70,6 +73,7 @@ public class FormDefinitionPatcher
 
     private readonly ILogger logger;
     private readonly XDocument xDoc;
+    private readonly Dictionary<string, string> pendingVisibilityConditions = new();
 
     public FormDefinitionPatcher(
         ILogger logger,
@@ -190,6 +194,8 @@ public class FormDefinitionPatcher
 
     public string? GetPatched() => xDoc.Root?.ToString();
 
+    public IReadOnlyDictionary<string, string> GetPendingVisibilityConditions() => pendingVisibilityConditions;
+
     public void PatchField(XElement field)
     {
         var columnAttr = field.Attribute(FieldAttrColumn);
@@ -260,6 +266,9 @@ public class FormDefinitionPatcher
             controlName,
             columnAttr?.Value,
             new EmptySourceObjectContext());
+
+        // Extract before the switch — TfcDirective.Clear calls field.RemoveNodes() which would destroy <visiblemacro>
+        string? visibilityConditionJson = ExtractVisibilityConditionXml(field, fieldDescriptor);
 
         switch (fieldMigrationService.GetFieldMigration(fieldMigrationContext, allowNullSourceFormControl))
         {
@@ -417,6 +426,12 @@ public class FormDefinitionPatcher
             }
         }
 
+        if (visibilityConditionJson != null && columnAttr?.Value is { } condFieldName)
+        {
+            pendingVisibilityConditions[condFieldName] = visibilityConditionJson;
+            logger.LogDebug("Queued visibility condition for field '{Field}'", fieldDescriptor);
+        }
+
         if (string.Equals(columnAttr?.Value, "PageInternalRedirectNodeGuid", StringComparison.InvariantCultureIgnoreCase))
         {
             field.SetAttributeValue(FieldAttrVisible, true);
@@ -433,6 +448,159 @@ public class FormDefinitionPatcher
             EventLogProvider.LogEvent(eventInfo);
         }
     }
+
+    private string? ExtractVisibilityConditionXml(XElement field, string fieldDescriptor)
+    {
+        var propertiesElem = field.Element(FieldElemProperties);
+        var visCondElem = propertiesElem?.Element(PropertiesElemVisiblemacro)
+            ?? field.Element(PropertiesElemVisiblemacro);
+
+        if (visCondElem == null)
+        {
+            return null;
+        }
+
+        string conditionExpression = visCondElem.Value.Trim();
+        visCondElem.Remove();
+
+        if (string.IsNullOrWhiteSpace(conditionExpression))
+        {
+            return null;
+        }
+
+        // Strip Kentico macro wrapper {% ... %} if present
+        if (conditionExpression.StartsWith("{%") && conditionExpression.EndsWith("%}"))
+        {
+            conditionExpression = conditionExpression[2..^2];
+            // Remove the security context appended after the first pipe
+            int pipeIdx = conditionExpression.IndexOf("|(identity)", StringComparison.OrdinalIgnoreCase);
+            if (pipeIdx >= 0)
+            {
+                conditionExpression = conditionExpression[..pipeIdx];
+            }
+            conditionExpression = conditionExpression.Trim();
+        }
+
+        string? conditionXml = TryParseSimpleCondition(conditionExpression);
+        if (conditionXml == null)
+        {
+            logger.LogWarning("Field '{Field}': visibility condition '{Condition}' is too complex to migrate automatically — set it manually in the XbyK admin UI", fieldDescriptor, conditionExpression);
+        }
+
+        return conditionXml;
+    }
+
+    private static string? TryParseSimpleCondition(string condition)
+    {
+        // FieldName == value  or  FieldName.Value == value  (KX13 uses .Value suffix)
+        var eqMatch = Regex.Match(condition, @"^(\w+)(?:\.Value)?\s*(==|!=)\s*(.+)$");
+        if (!eqMatch.Success)
+        {
+            return TryParseMethodCallCondition(condition);
+        }
+
+        string fieldName = eqMatch.Groups[1].Value;
+        string op = eqMatch.Groups[2].Value;
+        string valueStr = eqMatch.Groups[3].Value.Trim();
+
+        // Null / empty string  →  IsEmptyString / IsNotEmptyString
+        // Note: EmptyVisibilityConditionProperties has no PropertyName, so the dependency field is lost.
+        if (valueStr is "null" or "\"\"" or "''")
+        {
+            string id = op == "==" ? "Kentico.Administration.IsEmptyString" : "Kentico.Administration.IsNotEmptyString";
+            return BuildVcXmlEmpty(id);
+        }
+
+        // Boolean  →  IsTrueVisibilityCondition / IsFalseVisibilityCondition
+        if (valueStr is "true" or "false")
+        {
+            if (op != "==")
+            {
+                return null;
+            }
+
+            string id = valueStr == "true"
+                ? "Kentico.Administration.IsTrueVisibilityCondition"
+                : "Kentico.Administration.IsFalseVisibilityCondition";
+            return BuildVcXmlEmpty(id);
+        }
+
+        // Integer
+        if (int.TryParse(valueStr, out int intVal))
+        {
+            string id = op == "==" ? "Kentico.Administration.IsEqualToInteger" : "Kentico.Administration.IsNotEqualToInteger";
+            return BuildVcXml(id, fieldName, "int", intVal.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // Decimal
+        if (decimal.TryParse(valueStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal decVal))
+        {
+            string id = op == "==" ? "Kentico.Administration.IsEqualToDecimal" : "Kentico.Administration.IsNotEqualToDecimal";
+            return BuildVcXml(id, fieldName, "decimal", decVal.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // Quoted string
+        if ((valueStr.StartsWith('"') && valueStr.EndsWith('"')) ||
+            (valueStr.StartsWith('\'') && valueStr.EndsWith('\'')))
+        {
+            string cleanValue = valueStr[1..^1];
+            string id = op == "==" ? "Kentico.Administration.IsEqualToString" : "Kentico.Administration.NotEqualsString";
+            return BuildVcXml(id, fieldName, "string", cleanValue);
+        }
+
+        return null;
+    }
+
+    private static string? TryParseMethodCallCondition(string condition)
+    {
+        // FieldName.Contains("value")  /  StartsWith  /  EndsWith  /  !FieldName.Contains(...)
+        bool negated = condition.StartsWith('!');
+        string expr = negated ? condition[1..].Trim() : condition;
+
+        var methodMatch = Regex.Match(expr, @"^(\w+)(?:\.Value)?\.(Contains|StartsWith|EndsWith)\(\s*""(.*?)""\s*\)$");
+        if (!methodMatch.Success)
+        {
+            return null;
+        }
+
+        string fieldName = methodMatch.Groups[1].Value;
+        string method = methodMatch.Groups[2].Value;
+        string value = methodMatch.Groups[3].Value;
+
+        string id = method switch
+        {
+            "Contains" => negated ? "Kentico.Administration.NotContainsString" : "Kentico.Administration.ContainsString",
+            "StartsWith" => "Kentico.Administration.StartsWithString",
+            "EndsWith" => "Kentico.Administration.EndsWithString",
+            _ => null!
+        };
+
+        if (negated && method is "StartsWith" or "EndsWith")
+        {
+            return null;
+        }
+
+        return BuildVcXml(id, fieldName, "string", value);
+    }
+
+    // Generates the XML stored in VisibilityConditionConfigurationXmlData for conditions with a PropertyName + CompareToValue.
+    // Format matches what VisibilityConditionConfigurationsXmlSerializer.Serialize produces.
+    private static string BuildVcXml(string conditionId, string propertyName, string xsdType, string value) =>
+        $"<VisibilityConditionConfiguration>" +
+        $"<Identifier>{System.Security.SecurityElement.Escape(conditionId)}</Identifier>" +
+        $"<Properties>" +
+        $"<PropertyName>{System.Security.SecurityElement.Escape(propertyName)}</PropertyName>" +
+        $"<CompareToValue xmlns:q1=\"http://www.w3.org/2001/XMLSchema\" p4:type=\"q1:{xsdType}\" xmlns:p4=\"http://www.w3.org/2001/XMLSchema-instance\">{System.Security.SecurityElement.Escape(value)}</CompareToValue>" +
+        $"<Comparison>Ordinal</Comparison>" +
+        $"</Properties>" +
+        $"</VisibilityConditionConfiguration>";
+
+    // Generates the XML for conditions with no properties (e.g., IsEmptyString, IsTrueVisibilityCondition).
+    private static string BuildVcXmlEmpty(string conditionId) =>
+        $"<VisibilityConditionConfiguration>" +
+        $"<Identifier>{System.Security.SecurityElement.Escape(conditionId)}</Identifier>" +
+        $"<Properties />" +
+        $"</VisibilityConditionConfiguration>";
 
     private void ClearSettings(XElement settingsElem)
     {

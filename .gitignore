@@ -15,3 +15,4 @@ mcp.json
 claude_desktop_config.json
 mcp_config.json
 /Migration.Tool.CLI/appsettings.json
+/.github/copilot-instructions.md
