@@ -32,6 +32,7 @@ public static class FormDefinitionHelper
             }
 
             var formInfo = new FormInfo(result);
+            ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
             target.ClassFormDefinition = formInfo.GetXmlDefinition();
         }
         else
@@ -66,11 +67,24 @@ public static class FormDefinitionHelper
             }
 
             var formInfo = new FormInfo(result);
+            ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
             target.ClassFormDefinition = formInfo.GetXmlDefinition();
         }
         else
         {
             target.ClassFormDefinition = new FormInfo().GetXmlDefinition();
+        }
+    }
+
+    private static void ApplyVisibilityConditions(FormInfo formInfo, IReadOnlyDictionary<string, string> conditions)
+    {
+        foreach (var (fieldName, conditionXml) in conditions)
+        {
+            if (formInfo.GetFormField(fieldName) is { } ffi)
+            {
+                ffi.VisibilityConditionConfigurationXmlData = conditionXml;
+                formInfo.UpdateFormField(fieldName, ffi);
+            }
         }
     }
 }
