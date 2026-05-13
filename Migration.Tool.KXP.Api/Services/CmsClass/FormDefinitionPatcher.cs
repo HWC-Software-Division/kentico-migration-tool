@@ -71,6 +71,9 @@ public class FormDefinitionPatcher
     private readonly ILogger logger;
     private readonly XDocument xDoc;
 
+    /// <summary>ชื่อ class ที่กำลัง migrate เพื่อให้ IFieldMigration ใช้ค้นหา TaxonomyGUID</summary>
+    public string? CurrentClassName { get; set; }
+
     public FormDefinitionPatcher(
         ILogger logger,
         string formDefinitionXml,

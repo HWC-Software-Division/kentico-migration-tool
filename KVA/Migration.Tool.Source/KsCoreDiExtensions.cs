@@ -94,6 +94,7 @@ public static class KsCoreDiExtensions
         services.AddTransient<IUmtMapper<CustomTableMapperSource>, ContentItemMapper>();
         services.AddTransient<IUmtMapper<CustomModuleItemMapperSource>, ContentItemMapper>();
         services.AddTransient<IUmtMapper<TagModelSource>, TagMapper>();
+        services.AddTransient<IUmtMapper<CmsTagMapperSource>, CmsTagMapper>();
 
         // mappers
 #pragma warning disable CS0618 // Type or member is obsolete

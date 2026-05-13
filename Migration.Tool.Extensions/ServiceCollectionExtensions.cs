@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Migration.Tool.Extensions.CommunityMigrations;
 using Migration.Tool.Extensions.DefaultMigrations;
 using Migration.Tool.KXP.Api.Services.CmsClass;
+using Migration.Tool.Source.Handlers;
 
 namespace Migration.Tool.Extensions;
 
@@ -11,6 +12,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddTransient<IFieldMigration, AssetMigration>();
         services.AddTransient<IFieldMigration, SampleTextMigration>();
+        services.AddTransient<IFieldMigration, TagTaxonomyFieldMigration>();
 
         services.AddTransient<IWidgetPropertyMigration, WidgetFileMigration>();
         services.AddTransient<IWidgetPropertyMigration, WidgetPathSelectorMigration>();
@@ -38,6 +40,10 @@ public static class ServiceCollectionExtensions
         //   2. Custom mapping method gives you the highest flexibility if the prefabricated type doesn't match the source type exactly.
         //
         //      services.AddMappingToPrefabricatedContentTypeSample();
+
+        //Tag migration handler (K13 CMS_TagGroup/CMS_Tag → XbyK Taxonomy/Tag)
+        // ต้อง run ก่อน MigratePagesCommandHandler เพื่อให้มี taxonomy data พร้อม
+        services.AddTransient<MigrateTagsCommandHandler>();
 
         return services;
     }

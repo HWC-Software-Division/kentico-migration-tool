@@ -1,7 +1,5 @@
 using Kentico.Xperience.UMT.Model;
-
 using Microsoft.Extensions.Logging;
-
 using Migration.Tool.Common.Abstractions;
 using Migration.Tool.Source.Model;
 
@@ -13,30 +11,72 @@ public class TagMapper(ILogger<TagMapper> logger) : UmtMapperBase<TagModelSource
 {
     protected override IEnumerable<IUmtModel> MapInternal(TagModelSource source)
     {
-        var (taxonomyGuid, cmsCategory, id2Guid) = source;
+        var (taxonomyGuid, category, categoryId2Guid) = source;
+
+        var codeName = ToCodeName(category.CategoryName ?? category.CategoryDisplayName);
+
+        Guid? parentGuid = null;
+        if (category.CategoryParentID.HasValue &&
+            categoryId2Guid.TryGetValue(category.CategoryParentID.Value, out var parentGuidValue))
+        {
+            parentGuid = parentGuidValue;
+        }
+
         var tag = new TagModel
         {
-            TagName = cmsCategory.CategoryName,
-            TagTitle = cmsCategory.CategoryDisplayName,
-            TagDescription = cmsCategory.CategoryDescription,
-            TagGUID = cmsCategory.CategoryGUID,
+            TagGUID = category.CategoryGUID,
+            TagName = codeName,
+            TagTitle = category.CategoryDisplayName,
+            TagDescription = category.CategoryDescription,
             TagTaxonomyGUID = taxonomyGuid,
-            TagOrder = 0,
+            TagOrder = category.CategoryOrder ?? 0,
+            TagParentGUID = parentGuid,
             TagTranslations = []
         };
 
-        if (cmsCategory.CategoryParentID is { } categoryParentId)
+        logger.LogTrace(
+            "Mapped CmsCategory: ID={CategoryId} '{DisplayName}' → CodeName='{CodeName}' Taxonomy={TaxGuid}",
+            category.CategoryID, category.CategoryDisplayName, codeName, taxonomyGuid
+        );
+
+        yield return tag;
+    }
+
+    private static string ToCodeName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
         {
-            if (id2Guid.TryGetValue(categoryParentId, out var categoryGuid))
+            return "tag";
+        }
+
+        var sb = new System.Text.StringBuilder();
+        foreach (var c in name.Normalize(System.Text.NormalizationForm.FormD))
+        {
+            if (c < 128)
             {
-                tag.TagParentGUID = categoryGuid;
-            }
-            else
-            {
-                logger.LogWarning("Missing parent category {CategoryParentID} in source instance", categoryParentId);
+                if (char.IsLetterOrDigit(c))
+                {
+                    sb.Append(char.ToLowerInvariant(c));
+                }
+                else if (char.IsWhiteSpace(c) || c == '-' || c == '_')
+                {
+                    sb.Append('-');
+                }
             }
         }
 
-        yield return tag;
+        var result = sb.ToString().Trim('-');
+
+        if (string.IsNullOrEmpty(result))
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(name);
+            result = Convert.ToHexString(bytes).ToLowerInvariant();
+            if (result.Length > 40)
+            {
+                result = result[..40];
+            }
+        }
+
+        return string.IsNullOrEmpty(result) ? "tag" : result;
     }
 }
