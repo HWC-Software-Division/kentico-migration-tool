@@ -94,6 +94,12 @@ public class CommandParser : ICommandParser
                 continue;
             }
 
+            if (arg == $"--{MigrateTagValuesCommand.Moniker}")
+            {
+                subcommands.Add(new MigrateTagValuesCommand());
+                continue;
+            }
+
             if (arg == $"--{MigrateSettingKeysCommand.Moniker}")
             {
                 subcommands.Add(new MigrateSettingKeysCommand());
@@ -162,6 +168,7 @@ public class CommandParser : ICommandParser
         WriteCommandDesc($"starts migration of {Green(MigratePagesCommand.MonikerFriendly)}", $"migrate --{MigratePagesCommand.Moniker}");
         WriteCommandDesc($"starts migration of {Green(MigrateTagsCommand.MonikerFriendly)}", $"migrate --{MigrateTagsCommand.Moniker}");
         WriteCommandDesc($"starts migration of {Green(MigrateCategoriesCommand.MonikerFriendly)}", $"migrate --{MigrateCategoriesCommand.Moniker}");
+        WriteCommandDesc($"starts migration of {Green(MigrateTagValuesCommand.MonikerFriendly)}", $"migrate --{MigrateTagValuesCommand.Moniker}");
         WriteCommandDesc($"starts migration of {Green(MigrateSettingKeysCommand.MonikerFriendly)}", $"migrate --{MigrateSettingKeysCommand.Moniker}");
         WriteCommandDesc($"starts migration of {Green(MigrateContactManagementCommand.MonikerFriendly)}", $"migrate --{MigrateContactManagementCommand.Moniker}");
         WriteCommandDesc($"starts migration of {Green(MigrateDataProtectionCommand.MonikerFriendly)}", $"migrate --{MigrateDataProtectionCommand.Moniker}");

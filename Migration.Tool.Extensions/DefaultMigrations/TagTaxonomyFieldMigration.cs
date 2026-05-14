@@ -6,14 +6,17 @@ using Migration.Tool.Common.Enumerations;
 using Migration.Tool.Common.Helpers;
 using Migration.Tool.KX13.Context;
 using Migration.Tool.KXP.Api.Services.CmsClass;
-using Migration.Tool.Source.Contexts;
 using Migration.Tool.Source.Handlers;
 
 namespace Migration.Tool.Extensions.DefaultMigrations;
 
 /// <summary>
 /// IFieldMigration: แปลง K13 DocumentTags (longtext / TagSelector)
-///                  → XbyK Taxonomy field (JSON array of TagGUIDs)
+///                  → XbyK Taxonomy field definition during --page-types.
+///
+/// MigrateValue is a no-op: DocumentTags is external="true" in both K13 and XbyK.
+/// Actual tag assignment is done by --tag-values (MigrateTagValuesCommandHandler)
+/// which inserts directly into CMS_ContentItemTag.
 /// </summary>
 public class TagTaxonomyFieldMigration(
     ILogger<TagTaxonomyFieldMigration> logger,
@@ -32,52 +35,17 @@ public class TagTaxonomyFieldMigration(
             StringComparison.OrdinalIgnoreCase
         );
 
-    public async Task<FieldMigrationResult> MigrateValue(
+    public Task<FieldMigrationResult> MigrateValue(
         object? sourceValue,
         FieldMigrationContext context)
     {
-        if (sourceValue is not string rawTags || string.IsNullOrWhiteSpace(rawTags))
-        {
-            return new FieldMigrationResult(true, null);
-        }
-
-        var tagNames = rawTags
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
-
-        // ดึง DocumentTagGroupId ผ่าน DocumentId จาก context
-        int? documentTagGroupId = null;
-        if (context.SourceObjectContext is DocumentSourceObjectContext docCtx)
-        {
-            await using var kx13Context = await kx13ContextFactory.CreateDbContextAsync();
-            var doc = kx13Context.CmsDocuments.FirstOrDefault(d => d.DocumentId == docCtx.DocumentId);
-            documentTagGroupId = doc?.DocumentTagGroupId;
-        }
-
-        var termGuids = new List<string>();
-
-        foreach (var tagName in tagNames)
-        {
-            var guid = FindTermGuid(tagName, documentTagGroupId);
-            if (guid.HasValue)
-            {
-                termGuids.Add(guid.Value.ToString());
-                logger.LogTrace("Mapped '{Tag}' → {Guid}", tagName, guid.Value);
-            }
-            else
-            {
-                logger.LogWarning("Tag '{Tag}' not found in migration map — skipped", tagName);
-            }
-        }
-
-        if (termGuids.Count == 0)
-        {
-            logger.LogWarning("No tags mapped for value '{Value}'", rawTags);
-            return new FieldMigrationResult(false, null);
-        }
-
-        var json = System.Text.Json.JsonSerializer.Serialize(termGuids);
-        return new FieldMigrationResult(true, json);
+        // DocumentTags has external="true" in K13 → it lives in CmsDocument, not in the
+        // coupled data table → MapCoupledDataFieldValues skips it → sourceValue is always null.
+        // In XbyK the external="true" was removed by MigrateFieldDefinition, so a column
+        // exists in the class-specific table. The actual JSON value is written later by
+        // MigrateTagValuesCommandHandler (--tag-values) using ContentItemCommonDataInfo.Provider.Set().
+        logger.LogTrace("MigrateValue: DocumentTags skipped (handled by --tag-values)");
+        return Task.FromResult(new FieldMigrationResult(true, null));
     }
 
     public void MigrateFieldDefinition(
@@ -92,6 +60,11 @@ public class TagTaxonomyFieldMigration(
 
         // ลบ system="true" เพื่อให้ field แสดงใน Content Types > Fields admin UI
         field.Attribute("system")?.Remove();
+
+        // ลบ external="true" ที่ติดมาจาก K13 (DocumentTags เป็น system field ใน CmsDocument)
+        // ใน XbyK: external="true" ทำให้ไม่มี column ในตาราง class-specific → ค่าไม่ถูกบันทึก
+        // ต้องลบออกเพื่อให้ XbyK สร้าง DocumentTags column และเก็บค่าเป็น JSON ในตารางนั้น
+        field.Attribute("external")?.Remove();
 
         var settings = field.EnsureElement(FormDefinitionPatcher.FieldElemSettings);
 
@@ -247,33 +220,4 @@ public class TagTaxonomyFieldMigration(
         }
     }
 
-    private static Guid? FindTermGuid(string tagName, int? documentTagGroupId)
-    {
-        // Scoped lookup: ค้นหา tag ใน TagGroup เดียวกับ document ก่อน
-        if (documentTagGroupId.HasValue)
-        {
-            foreach (var (tagId, name) in MigrateTagsCommandHandler.TagIdToName)
-            {
-                if (name.Equals(tagName, StringComparison.OrdinalIgnoreCase) &&
-                    MigrateTagsCommandHandler.TagIdToGroupId.TryGetValue(tagId, out var groupId) &&
-                    groupId == documentTagGroupId.Value &&
-                    MigrateTagsCommandHandler.TagIdToTermGuid.TryGetValue(tagId, out var guid))
-                {
-                    return guid;
-                }
-            }
-        }
-
-        // Fallback: ค้นหาทุก group (กรณีไม่มี DocumentTagGroupId หรือหาใน group ไม่เจอ)
-        foreach (var (tagId, name) in MigrateTagsCommandHandler.TagIdToName)
-        {
-            if (name.Equals(tagName, StringComparison.OrdinalIgnoreCase) &&
-                MigrateTagsCommandHandler.TagIdToTermGuid.TryGetValue(tagId, out var guid))
-            {
-                return guid;
-            }
-        }
-
-        return null;
-    }
 }
