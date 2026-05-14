@@ -133,13 +133,12 @@ public class AssetFacade(
             {
                 [LegacyMediaFileTitleField.Column!] = mediaFile.FileTitle,
                 [LegacyMediaFileDescriptionField.Column!] = mediaFile.FileDescription,
-                [LegacyMediaFileReleaseDateField.Column!] = mediaFile.ReleaseDate,
+                // ReleaseDate: only set when valid — media files without a date stay null (AllowEmpty=true)
             };
 
-            var releaseDate = mediaFile.ReleaseDate;
-            if (releaseDate != DateTime.MinValue)
+            if (mediaFile.ReleaseDate != DateTime.MinValue)
             {
-                contentItemData[LegacyMediaFileReleaseDateField.Column!] = releaseDate;
+                contentItemData[LegacyMediaFileReleaseDateField.Column!] = mediaFile.ReleaseDate;
             }
 
             if (!toolConfiguration.MigrateOnlyMediaFileInfo.GetValueOrDefault(false))
