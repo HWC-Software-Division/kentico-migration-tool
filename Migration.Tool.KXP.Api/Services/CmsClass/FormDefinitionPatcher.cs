@@ -504,14 +504,15 @@ public class FormDefinitionPatcher
         string valueStr = eqMatch.Groups[3].Value.Trim();
 
         // Null / empty string  →  IsEmptyString / IsNotEmptyString
-        // Note: EmptyVisibilityConditionProperties has no PropertyName, so the dependency field is lost.
+        // Uses VisibilityConditionWithDependencyProperties (PropertyName only).
         if (valueStr is "null" or "\"\"" or "''")
         {
             string id = op == "==" ? "Kentico.Administration.IsEmptyString" : "Kentico.Administration.IsNotEmptyString";
-            return BuildVcXmlEmpty(id);
+            return BuildVcXmlDependency(id, fieldName);
         }
 
         // Boolean  →  IsTrueVisibilityCondition / IsFalseVisibilityCondition
+        // Uses VisibilityConditionWithDependencyProperties (PropertyName only).
         if (valueStr is "true" or "false")
         {
             if (op != "==")
@@ -522,30 +523,30 @@ public class FormDefinitionPatcher
             string id = valueStr == "true"
                 ? "Kentico.Administration.IsTrueVisibilityCondition"
                 : "Kentico.Administration.IsFalseVisibilityCondition";
-            return BuildVcXmlEmpty(id);
+            return BuildVcXmlDependency(id, fieldName);
         }
 
-        // Integer
+        // Integer — uses IsEqualToVisibilityConditionProperties (CompareToValue with XSD type)
         if (int.TryParse(valueStr, out int intVal))
         {
             string id = op == "==" ? "Kentico.Administration.IsEqualToInteger" : "Kentico.Administration.IsNotEqualToInteger";
-            return BuildVcXml(id, fieldName, "int", intVal.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return BuildVcXmlNumeric(id, fieldName, "int", intVal.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
-        // Decimal
+        // Decimal — uses IsEqualToVisibilityConditionProperties (CompareToValue with XSD type)
         if (decimal.TryParse(valueStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal decVal))
         {
             string id = op == "==" ? "Kentico.Administration.IsEqualToDecimal" : "Kentico.Administration.IsNotEqualToDecimal";
-            return BuildVcXml(id, fieldName, "decimal", decVal.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            return BuildVcXmlNumeric(id, fieldName, "decimal", decVal.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
-        // Quoted string
+        // Quoted string — uses StringComparisonConditionProperties (Value + CaseSensitive)
         if ((valueStr.StartsWith('"') && valueStr.EndsWith('"')) ||
             (valueStr.StartsWith('\'') && valueStr.EndsWith('\'')))
         {
             string cleanValue = valueStr[1..^1];
             string id = op == "==" ? "Kentico.Administration.IsEqualToString" : "Kentico.Administration.NotEqualsString";
-            return BuildVcXml(id, fieldName, "string", cleanValue);
+            return BuildVcXmlString(id, fieldName, cleanValue);
         }
 
         return null;
@@ -554,6 +555,7 @@ public class FormDefinitionPatcher
     private static string? TryParseMethodCallCondition(string condition)
     {
         // FieldName.Contains("value")  /  StartsWith  /  EndsWith  /  !FieldName.Contains(...)
+        // All use StringComparisonConditionProperties (Value + CaseSensitive).
         bool negated = condition.StartsWith('!');
         string expr = negated ? condition[1..].Trim() : condition;
 
@@ -580,12 +582,24 @@ public class FormDefinitionPatcher
             return null;
         }
 
-        return BuildVcXml(id, fieldName, "string", value);
+        return BuildVcXmlString(id, fieldName, value);
     }
 
-    // Generates the XML stored in VisibilityConditionConfigurationXmlData for conditions with a PropertyName + CompareToValue.
-    // Format matches what VisibilityConditionConfigurationsXmlSerializer.Serialize produces.
-    private static string BuildVcXml(string conditionId, string propertyName, string xsdType, string value) =>
+    // For string conditions (IsEqualToString, NotEqualsString, ContainsString, etc.)
+    // Uses StringComparisonConditionProperties: PropertyName + Value + CaseSensitive.
+    private static string BuildVcXmlString(string conditionId, string propertyName, string value) =>
+        $"<VisibilityConditionConfiguration>" +
+        $"<Identifier>{System.Security.SecurityElement.Escape(conditionId)}</Identifier>" +
+        $"<Properties>" +
+        $"<PropertyName>{System.Security.SecurityElement.Escape(propertyName)}</PropertyName>" +
+        $"<Value>{System.Security.SecurityElement.Escape(value)}</Value>" +
+        $"<CaseSensitive>true</CaseSensitive>" +
+        $"</Properties>" +
+        $"</VisibilityConditionConfiguration>";
+
+    // For integer/decimal conditions (IsEqualToInteger, IsEqualToDecimal, etc.)
+    // Uses IsEqualToVisibilityConditionProperties: PropertyName + CompareToValue (with XSD type) + Comparison.
+    private static string BuildVcXmlNumeric(string conditionId, string propertyName, string xsdType, string value) =>
         $"<VisibilityConditionConfiguration>" +
         $"<Identifier>{System.Security.SecurityElement.Escape(conditionId)}</Identifier>" +
         $"<Properties>" +
@@ -595,11 +609,14 @@ public class FormDefinitionPatcher
         $"</Properties>" +
         $"</VisibilityConditionConfiguration>";
 
-    // Generates the XML for conditions with no properties (e.g., IsEmptyString, IsTrueVisibilityCondition).
-    private static string BuildVcXmlEmpty(string conditionId) =>
+    // For dependency-only conditions (IsEmptyString, IsNotEmptyString, IsTrueVisibilityCondition, IsFalseVisibilityCondition).
+    // Uses VisibilityConditionWithDependencyProperties: PropertyName only.
+    private static string BuildVcXmlDependency(string conditionId, string propertyName) =>
         $"<VisibilityConditionConfiguration>" +
         $"<Identifier>{System.Security.SecurityElement.Escape(conditionId)}</Identifier>" +
-        $"<Properties />" +
+        $"<Properties>" +
+        $"<PropertyName>{System.Security.SecurityElement.Escape(propertyName)}</PropertyName>" +
+        $"</Properties>" +
         $"</VisibilityConditionConfiguration>";
 
     private void ClearSettings(XElement settingsElem)
