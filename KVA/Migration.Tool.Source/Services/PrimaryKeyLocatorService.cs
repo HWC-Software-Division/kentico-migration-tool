@@ -124,7 +124,10 @@ public class PrimaryKeyLocatorService(
             if (sourceType == typeof(ICmsClass))
             {
                 var sourceGuid = modelFacade.SelectById<ICmsClass>(sourceId)?.ClassGUID;
-                targetId = DataClassInfoProvider.GetClasses().Where(x => x.ClassGUID == sourceGuid).Select(x => x.ClassID).Single();
+                targetId = DataClassInfoProvider.GetClasses()
+                    .WhereEquals(nameof(DataClassInfo.ClassGUID), sourceGuid)
+                    .Select(x => x.ClassID)
+                    .Single();
                 return true;
             }
 
