@@ -12,6 +12,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\KVA\Migration.Tool.Source\Migration.Tool.Source.csproj" />
+      <ProjectReference Include="..\Migration.Tool.KX13\Migration.Tool.KX13.csproj" />
       <ProjectReference Include="..\Migration.Tool.KXP.Api\Migration.Tool.KXP.Api.csproj" />
     </ItemGroup>
 

@@ -21,6 +21,7 @@ public static class FormDefinitionHelper
                 isCustomizableSystemClass,
                 classIsCustom
             );
+            patcher.CurrentClassName = source.ClassName;
 
             patcher.PatchFields();
             patcher.RemoveCategories(); // TODO tk: 2022-10-11 remove when supported

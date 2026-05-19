@@ -344,6 +344,12 @@ public class ContentItemMapper(
                         throw new Exception("Error, unable to find coupled data primary key");
                     }
                     var coupledDataRow = coupledDataService.GetSourceCoupledDataRow(sourceNodeClass.ClassTableName!, primaryKeyName, cmsDocument.DocumentForeignKeyValue);
+
+                    // Note: DocumentTags is a system field stored in CmsDocument with external="true"
+                    // in both K13 and XbyK. It is NOT in the coupled data table and is skipped by
+                    // MapCoupledDataFieldValues. Tag assignments are handled by --tag-values which
+                    // inserts rows directly into CMS_ContentItemTag.
+
                     var sourceObjectContext = new DocumentSourceObjectContext(cmsTree, sourceNodeClass, sourceSite, sfi, fi, cmsDocument.DocumentID);
 
                     foreach (var model in MapProperties(contentItemModel, commonDataModel, dataModel, sfi, fi, mapping, sourceNodeClass, targetClassInfo!, coupledDataRow, sourceObjectContext, convertorContext, includedMetadata, commonFields))
