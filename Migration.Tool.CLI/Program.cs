@@ -106,7 +106,12 @@ services
             options.SingleLine = true;
             options.TimestampFormat = "hh:mm:ss.fff ";
         });
+        // Full log (Trace/Info/Warning/Error รวม)
         builder.AddFile(config.GetSection($"{ConfigurationNames.Logging}:File"));
+        // Warning + Error เท่านั้น
+        builder.AddFile(config.GetSection($"{ConfigurationNames.Logging}:FileWarning"));
+        // Error เท่านั้น
+        builder.AddFile(config.GetSection($"{ConfigurationNames.Logging}:FileError"));
     });
 
 

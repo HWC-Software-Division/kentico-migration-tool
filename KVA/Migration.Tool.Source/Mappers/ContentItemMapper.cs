@@ -1046,6 +1046,26 @@ public class ContentItemMapper(
                 newField = commonFields
                     .FirstOrDefault(cf => ReusableSchemaService.RemoveClassPrefix(mapping?.TargetClassName ?? sourceNodeClass.ClassName, cf.Name).Equals(targetColumnName, StringComparison.InvariantCultureIgnoreCase));
             }
+            // Guard: if migration produced null for a Required field that has no default value,
+            // substitute an empty/zero default to avoid SQL NOT NULL constraint violations.
+            // Log a warning so the user knows which field/page type needs attention.
+            if (target.TryGetValue(targetFieldName, out var currentTargetValue) && currentTargetValue is null
+                && newField is { AllowEmpty: false } && string.IsNullOrEmpty(newField.DefaultValue))
+            {
+                string emptyDefault = newField.DataType?.ToLowerInvariant() switch
+                {
+                    "integer" or "longinteger" or "double" or "decimal" => "0",
+                    "boolean" => "false",
+                    _ => string.Empty   // text, longtext, guid, etc.
+                };
+                logger.LogWarning(
+                    "[Pages] Field '{Field}' (PageType='{PageType}'): Required field with no default value, " +
+                    "migration produced null → using empty default '{Default}'. " +
+                    "Consider adding a default value in the XbyK content type definition.",
+                    targetFieldName, sourceNodeClass.ClassName, emptyDefault);
+                target[targetFieldName] = emptyDefault;
+            }
+
             string? newControlName = newField?.Settings[CLASS_FIELD_CONTROL_NAME]?.ToString()?.ToLowerInvariant();
             if (newControlName?.Equals(FormComponents.AdminRichTextEditorComponent, StringComparison.InvariantCultureIgnoreCase) == true && target[targetColumnName] is string { } html && !string.IsNullOrWhiteSpace(html) &&
                 !configuration.MigrateMediaToMediaLibrary)

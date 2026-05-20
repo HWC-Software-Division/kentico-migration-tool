@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using CMS.ContentEngine;
+using CMS.ContentEngine.Internal;
 using CMS.Core;
 using CMS.DataEngine;
 using CMS.MediaLibrary;
@@ -127,7 +128,51 @@ public class AssetMigration(
 
                 if (mediaKind == MediaKind.MediaFile)
                 {
-                    logger.LogTrace("'{FieldName}' Skipped Match={Value}", fieldName, result);
+                    // For /getmedia/{folder}/{filePath} URLs (no GUID), the path is "/{folder}/{filePath}".
+                    // Extract the library folder from the first path segment so MediaHelper can do a DB lookup.
+                    string? inferredLibraryDir = path?.TrimStart('/').Split('/').FirstOrDefault();
+                    var sourceMediaFile = MediaHelper.GetMediaFile(
+                        result with { LinkKind = MediaLinkKind.DirectMediaPath, LibraryDir = inferredLibraryDir },
+                        modelFacade, link, logger);
+
+                    if (sourceMediaFile != null)
+                    {
+                        if (configuration.MigrateMediaToMediaLibrary)
+                        {
+                            if (entityIdentityFacade.Translate(sourceMediaFile) is { } mf && mediaFileFacade.GetMediaFile(mf.Identity) is { } x)
+                            {
+#pragma warning disable CS0618 // Type or member is obsolete
+                                mfis = [new AssetRelatedItem { Identifier = x.FileGUID, Dimensions = new AssetDimensions { Height = x.FileImageHeight, Width = x.FileImageWidth }, Name = x.FileName, Size = x.FileSize }];
+#pragma warning restore CS0618 // Type or member is obsolete
+                                hasMigratedAsset = true;
+                            }
+                        }
+                        else
+                        {
+                            var (ownerContentItemGuid, _) = assetFacade.GetRef(sourceMediaFile);
+                            if (ContentItemExists(ownerContentItemGuid))
+                            {
+                                mfis =
+                                [
+                                    new ContentItemReference { Identifier = ownerContentItemGuid }
+                                ];
+                                hasMigratedAsset = true;
+                                logger.LogTrace("MediaFile (path) migrated from media file '{Field}': '{Value}'", fieldName, result);
+                            }
+                            else
+                            {
+                                logger.LogWarning("[Pages] Field '{Field}': media file reference skipped — " +
+                                    "content item {ContentItemGuid} not found in XbyK. " +
+                                    "File '{FileName}' (Guid={FileGuid}, Path={FilePath}) was not imported during --media-libraries (physical file may be missing).",
+                                    fieldName, ownerContentItemGuid,
+                                    sourceMediaFile.FileName, sourceMediaFile.FileGUID, sourceMediaFile.FilePath);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        logger.LogTrace("'{FieldName}' Path-based MediaFile not found in K13, skipping. Match={Value}", fieldName, result);
+                    }
                 }
             }
 
@@ -151,12 +196,23 @@ public class AssetMigration(
                         else
                         {
                             var (ownerContentItemGuid, _) = assetFacade.GetRef(sourceMediaFile);
-                            mfis =
-                            [
-                                new ContentItemReference { Identifier = ownerContentItemGuid }
-                            ];
-                            hasMigratedAsset = true;
-                            logger.LogTrace("MediaFile migrated from media file '{Field}': '{Value}'", fieldName, result);
+                            if (ContentItemExists(ownerContentItemGuid))
+                            {
+                                mfis =
+                                [
+                                    new ContentItemReference { Identifier = ownerContentItemGuid }
+                                ];
+                                hasMigratedAsset = true;
+                                logger.LogTrace("MediaFile migrated from media file '{Field}': '{Value}'", fieldName, result);
+                            }
+                            else
+                            {
+                                logger.LogWarning("[Pages] Field '{Field}': media file reference skipped — " +
+                                    "content item {ContentItemGuid} not found in XbyK. " +
+                                    "File '{FileName}' (Guid={FileGuid}, Path={FilePath}) was not imported during --media-libraries (physical file may be missing).",
+                                    fieldName, ownerContentItemGuid,
+                                    sourceMediaFile.FileName, sourceMediaFile.FileGUID, sourceMediaFile.FilePath);
+                            }
                         }
                     }
                 }
@@ -216,12 +272,23 @@ public class AssetMigration(
                         else
                         {
                             var (ownerContentItemGuid, _) = assetFacade.GetRef(sourceMediaFile);
-                            mfis =
-                            [
-                                new ContentItemReference { Identifier = ownerContentItemGuid }
-                            ];
-                            hasMigratedAsset = true;
-                            logger.LogTrace("MediaFile migrated from media file '{Field}': '{Value}'", fieldName, mg);
+                            if (ContentItemExists(ownerContentItemGuid))
+                            {
+                                mfis =
+                                [
+                                    new ContentItemReference { Identifier = ownerContentItemGuid }
+                                ];
+                                hasMigratedAsset = true;
+                                logger.LogTrace("MediaFile migrated from media file '{Field}': '{Value}'", fieldName, mg);
+                            }
+                            else
+                            {
+                                logger.LogWarning("[Pages] Field '{Field}': media file reference skipped — " +
+                                    "content item {ContentItemGuid} not found in XbyK. " +
+                                    "File '{FileName}' (Guid={FileGuid}, Path={FilePath}) was not imported during --media-libraries (physical file may be missing).",
+                                    fieldName, ownerContentItemGuid,
+                                    sourceMediaFile.FileName, sourceMediaFile.FileGUID, sourceMediaFile.FilePath);
+                            }
                         }
                     }
                 }
@@ -229,7 +296,14 @@ public class AssetMigration(
         }
         else if (Kx13FormControls.UserControlForText.MediaSelectionControl.Equals(sourceFormControl, StringComparison.InvariantCultureIgnoreCase) && sourceValue is string sourceUrl)
         {
-            if (!configuration.MigrateMediaToMediaLibrary)
+            if (string.IsNullOrWhiteSpace(sourceUrl))
+            {
+                // K13 stored an empty/whitespace URL in a MediaSelectionControl field — nothing to migrate
+                logger.LogWarning("[Pages] Field '{Field}': MediaSelectionControl value is empty/null — skipping legacy media link creation (sourceValue='{Value}')",
+                    fieldName, sourceValue);
+                // hasMigratedAsset stays false → field left null
+            }
+            else if (!configuration.MigrateMediaToMediaLibrary)
             {
                 // If we're migrating assets to content hub, unmatched URL can be stored as legacy media link
 
@@ -402,12 +476,32 @@ public class AssetMigration(
         }
     }
 
+    /// <summary>
+    /// Checks whether a ContentItem with the given GUID actually exists in XbyK's database.
+    /// Used before creating a ContentItemReference to avoid FK violations when the media file
+    /// content item failed to import during --media-libraries (e.g., physical file not on disk).
+    /// </summary>
+    private static bool ContentItemExists(Guid contentItemGuid) =>
+        ContentItemInfo.Provider.Get(contentItemGuid) is not null;
+
     private async Task<IUmtModel> CreateLegacyMediaLinkUmtModel(string sourceUrl, Guid itemGuid)
     {
         var contentItemCodeNameProvider = Service.Resolve<IContentItemCodeNameProvider>();
 
         const int nameLength = 60;    // number of characters to take from the end of source url as representative name
         string displayName = sourceUrl.Length >= nameLength ? sourceUrl[^nameLength..] : sourceUrl;
+
+        logger.LogTrace("[Pages] CreateLegacyMediaLinkUmtModel: sourceUrl='{Url}', displayName='{DisplayName}', itemGuid={Guid}",
+            sourceUrl, displayName, itemGuid);
+
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            // Defensive guard: sourceUrl was not empty (guarded by caller) but trimming produced empty displayName
+            logger.LogWarning("[Pages] CreateLegacyMediaLinkUmtModel: sourceUrl '{Url}' produced empty displayName — cannot generate code name, skipping",
+                sourceUrl);
+            throw new InvalidOperationException($"CreateLegacyMediaLinkUmtModel: sourceUrl '{sourceUrl}' produced empty displayName");
+        }
+
         string name = await contentItemCodeNameProvider.Get(displayName);
 
         return new ContentItemSimplifiedModel
