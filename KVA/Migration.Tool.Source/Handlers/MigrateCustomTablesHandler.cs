@@ -194,11 +194,31 @@ public class MigrateCustomTablesHandler(
                             continue;
                         }
 
+                        // Fetch target column types so the ValueInterceptor can convert
+                        // Guid values to string for columns defined as nvarchar in XbyK.
+                        // (K13 stores ItemGUID as uniqueidentifier; older XbyK custom tables may use nvarchar.)
+                        var targetColumnTypes = bulkDataCopyService.GetSqlTableColumnTypes(
+                            xbkDataClass.ClassTableName, toolConfiguration.XbKConnectionString);
+
                         var bulkCopyRequest = new BulkCopyRequest(
                             xbkDataClass.ClassTableName,
                             s => true, // s => !autoIncrementColumns.Contains(s),
                             _ => true,
-                            20000
+                            20000,
+                            ValueInterceptor: (ordinal, columnName, value, row) =>
+                            {
+                                // Convert Guid → string when the target column is nvarchar/varchar.
+                                // SqlBulkCopy cannot coerce Guid to nvarchar automatically.
+                                if (value is Guid guid
+                                    && targetColumnTypes.TryGetValue(columnName, out string? targetType)
+                                    && (targetType.Equals("nvarchar", StringComparison.OrdinalIgnoreCase)
+                                        || targetType.Equals("varchar", StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    logger.LogTrace("[Custom Tables] Column '{Column}' ({TableName}): converting Guid→string for nvarchar target", columnName, xbkDataClass.ClassTableName);
+                                    return ValueInterceptorResult.ReplaceValue(guid.ToString());
+                                }
+                                return ValueInterceptorResult.DoNothing;
+                            }
                         );
 
                         logger.LogTrace("Bulk data copy request: {Request}", bulkCopyRequest);

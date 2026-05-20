@@ -190,6 +190,26 @@ public class BulkDataCopyService(ToolConfiguration configuration, ILogger<BulkDa
         return selectBuilder;
     }
 
+    /// <summary>
+    /// Returns a dictionary of column name → SQL data type (e.g. "nvarchar", "uniqueidentifier", "int") for the given table.
+    /// Used by callers that need to build type-aware ValueInterceptors (e.g. Guid→string for nvarchar columns).
+    /// </summary>
+    public Dictionary<string, string> GetSqlTableColumnTypes(string tableName, string? connectionString)
+    {
+        using var conn = new SqlConnection(connectionString);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @tableName";
+        cmd.Parameters.AddWithValue("tableName", tableName);
+        conn.Open();
+        using var reader = cmd.ExecuteReader();
+        var types = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+        {
+            types[reader.GetString(0)] = reader.GetString(1);
+        }
+        return types;
+    }
+
     public IEnumerable<SqlColumn> GetSqlTableColumns(string tableName, string? connectionString, IEnumerable<string>? allowedColumns = null)
     {
         using var sourceConnection = new SqlConnection(connectionString);

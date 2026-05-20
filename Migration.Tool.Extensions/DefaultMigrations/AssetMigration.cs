@@ -161,10 +161,11 @@ public class AssetMigration(
                             }
                             else
                             {
-                                logger.LogWarning("MediaFile {FileGuid} content item {ContentItemGuid} not found in XbyK " +
-                                    "(file may not have been imported during --media-libraries). " +
-                                    "Skipping reference for field '{Field}'.",
-                                    sourceMediaFile.FileGUID, ownerContentItemGuid, fieldName);
+                                logger.LogWarning("[Pages] Field '{Field}': media file reference skipped — " +
+                                    "content item {ContentItemGuid} not found in XbyK. " +
+                                    "File '{FileName}' (Guid={FileGuid}, Path={FilePath}) was not imported during --media-libraries (physical file may be missing).",
+                                    fieldName, ownerContentItemGuid,
+                                    sourceMediaFile.FileName, sourceMediaFile.FileGUID, sourceMediaFile.FilePath);
                             }
                         }
                     }
@@ -206,10 +207,11 @@ public class AssetMigration(
                             }
                             else
                             {
-                                logger.LogWarning("MediaFile {FileGuid} content item {ContentItemGuid} not found in XbyK " +
-                                    "(file may not have been imported during --media-libraries). " +
-                                    "Skipping reference for field '{Field}'.",
-                                    sourceMediaFile.FileGUID, ownerContentItemGuid, fieldName);
+                                logger.LogWarning("[Pages] Field '{Field}': media file reference skipped — " +
+                                    "content item {ContentItemGuid} not found in XbyK. " +
+                                    "File '{FileName}' (Guid={FileGuid}, Path={FilePath}) was not imported during --media-libraries (physical file may be missing).",
+                                    fieldName, ownerContentItemGuid,
+                                    sourceMediaFile.FileName, sourceMediaFile.FileGUID, sourceMediaFile.FilePath);
                             }
                         }
                     }
@@ -281,10 +283,11 @@ public class AssetMigration(
                             }
                             else
                             {
-                                logger.LogWarning("MediaFile {FileGuid} content item {ContentItemGuid} not found in XbyK " +
-                                    "(file may not have been imported during --media-libraries). " +
-                                    "Skipping reference for field '{Field}'.",
-                                    sourceMediaFile.FileGUID, ownerContentItemGuid, fieldName);
+                                logger.LogWarning("[Pages] Field '{Field}': media file reference skipped — " +
+                                    "content item {ContentItemGuid} not found in XbyK. " +
+                                    "File '{FileName}' (Guid={FileGuid}, Path={FilePath}) was not imported during --media-libraries (physical file may be missing).",
+                                    fieldName, ownerContentItemGuid,
+                                    sourceMediaFile.FileName, sourceMediaFile.FileGUID, sourceMediaFile.FilePath);
                             }
                         }
                     }
@@ -293,7 +296,14 @@ public class AssetMigration(
         }
         else if (Kx13FormControls.UserControlForText.MediaSelectionControl.Equals(sourceFormControl, StringComparison.InvariantCultureIgnoreCase) && sourceValue is string sourceUrl)
         {
-            if (!configuration.MigrateMediaToMediaLibrary)
+            if (string.IsNullOrWhiteSpace(sourceUrl))
+            {
+                // K13 stored an empty/whitespace URL in a MediaSelectionControl field — nothing to migrate
+                logger.LogWarning("[Pages] Field '{Field}': MediaSelectionControl value is empty/null — skipping legacy media link creation (sourceValue='{Value}')",
+                    fieldName, sourceValue);
+                // hasMigratedAsset stays false → field left null
+            }
+            else if (!configuration.MigrateMediaToMediaLibrary)
             {
                 // If we're migrating assets to content hub, unmatched URL can be stored as legacy media link
 
@@ -480,6 +490,18 @@ public class AssetMigration(
 
         const int nameLength = 60;    // number of characters to take from the end of source url as representative name
         string displayName = sourceUrl.Length >= nameLength ? sourceUrl[^nameLength..] : sourceUrl;
+
+        logger.LogTrace("[Pages] CreateLegacyMediaLinkUmtModel: sourceUrl='{Url}', displayName='{DisplayName}', itemGuid={Guid}",
+            sourceUrl, displayName, itemGuid);
+
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            // Defensive guard: sourceUrl was not empty (guarded by caller) but trimming produced empty displayName
+            logger.LogWarning("[Pages] CreateLegacyMediaLinkUmtModel: sourceUrl '{Url}' produced empty displayName — cannot generate code name, skipping",
+                sourceUrl);
+            throw new InvalidOperationException($"CreateLegacyMediaLinkUmtModel: sourceUrl '{sourceUrl}' produced empty displayName");
+        }
+
         string name = await contentItemCodeNameProvider.Get(displayName);
 
         return new ContentItemSimplifiedModel
