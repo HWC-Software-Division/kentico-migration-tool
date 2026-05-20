@@ -84,6 +84,7 @@ public static class FormDefinitionHelper
             if (formInfo.GetFormField(fieldName) is { } ffi)
             {
                 ffi.VisibilityConditionConfigurationXmlData = conditionXml;
+                ffi.AllowEmpty = true; // field with a visibility condition must not be required when hidden
                 formInfo.UpdateFormField(fieldName, ffi);
             }
         }

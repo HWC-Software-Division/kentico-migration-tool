@@ -126,6 +126,10 @@ public static class FieldMappingInstance
             new FieldMigration(KsFieldDataType.LongText, FieldDataType.LongText, FcLongText.DropDownListControl, FormComponents.AdminDropDownComponent),
             new FieldMigration(KsFieldDataType.LongText, FieldDataType.LongText, FcLongText.TextAreaControl, FormComponents.AdminTextAreaComponent),
             new FieldMigration(KsFieldDataType.LongText, FieldDataType.LongText, SfcDirective.CatchAnyNonMatching, FormComponents.AdminTextAreaComponent),
+            // Integer fields with dropdown/radio controls: XbyK has no integer dropdown, so convert to text.
+            // The stored option values ("0", "1", …) become strings; visibility conditions adjust accordingly.
+            new FieldMigration(KsFieldDataType.Integer, FieldDataType.Text, FcText.DropDownListControl, FormComponents.AdminDropDownComponent),
+            new FieldMigration(KsFieldDataType.Integer, FieldDataType.Text, FcText.RadioButtonsControl, FormComponents.AdminRadioGroupComponent),
             new FieldMigration(KsFieldDataType.Integer, FieldDataType.Integer, SfcDirective.CatchAnyNonMatching, FormComponents.AdminNumberInputComponent),
             new FieldMigration(KsFieldDataType.LongInteger, FieldDataType.LongInteger, SfcDirective.CatchAnyNonMatching, TfcDirective.Clear, [TfcDirective.Clear]), //FormComponents.AdminNumberInputComponent),
             new FieldMigration(KsFieldDataType.Double, FieldDataType.Double, SfcDirective.CatchAnyNonMatching, TfcDirective.Clear, [TfcDirective.Clear]), // FormComponents.AdminNumberInputComponent),

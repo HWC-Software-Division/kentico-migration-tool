@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
 using Migration.Tool.Common;
+using Migration.Tool.Common.Enumerations;
 
 namespace Migration.Tool.KXP.Api.Services.CmsClass;
 
@@ -37,6 +38,8 @@ public class FormDefinitionPatcher
     public const string SettingsMaximumpagesFallback = "99";
     public const string SettingsRootpath = "RootPath";
     public const string SettingsRootpathFallback = "/";
+    public const string FieldAttrAllowEmpty = "allowempty";
+    public const string FieldAttrColumnsize = "columnsize";
     public const string PropertiesElemVisiblemacro = "visiblemacro";
     public const string FieldElemVisibilityConditionData = "visibilityconditiondata";
 
@@ -74,6 +77,9 @@ public class FormDefinitionPatcher
     private readonly ILogger logger;
     private readonly XDocument xDoc;
     private readonly Dictionary<string, string> pendingVisibilityConditions = new();
+    // Integer fields converted to text (due to dropdown/radio control) — visibility conditions
+    // that reference these fields must use string comparison instead of integer comparison.
+    private readonly HashSet<string> integerToTextConvertedFields = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>ชื่อ class ที่กำลัง migrate เพื่อให้ IFieldMigration ใช้ค้นหา TaxonomyGUID</summary>
     public string? CurrentClassName { get; set; }
@@ -298,6 +304,22 @@ public class FormDefinitionPatcher
 
                 columnTypeAttr?.SetValue(targetDataType);
 
+                // Track integer→text conversions so visibility conditions on other fields
+                // that reference this field use string comparison (IsEqualToString) instead of
+                // integer comparison (IsEqualToInteger).
+                if (string.Equals(columnType, KsFieldDataType.Integer, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(targetDataType, KsFieldDataType.Text, StringComparison.OrdinalIgnoreCase) &&
+                    columnAttr?.Value is { } convertedFieldName)
+                {
+                    integerToTextConvertedFields.Add(convertedFieldName);
+                    // Text columns need an explicit size; integer fields have none.
+                    if (field.Attribute(FieldAttrColumnsize) == null)
+                    {
+                        field.SetAttributeValue(FieldAttrColumnsize, "100");
+                    }
+                    logger.LogDebug("Field '{Field}' converted from integer to text (dropdown control)", fieldDescriptor);
+                }
+
                 switch (targetFormComponent)
                 {
                     case TfcDirective.DoNothing:
@@ -429,6 +451,18 @@ public class FormDefinitionPatcher
             }
         }
 
+        // If the field has a non-empty default value it will always be populated — mark it as optional
+        // so the XbyK admin UI does not incorrectly show it as Required.
+        if (field.Attribute(FieldAttrAllowEmpty) == null)
+        {
+            var defaultValueElem = field.XPathSelectElement($"{FieldElemProperties}/{PropertiesElemDefaultvalue}");
+            if (defaultValueElem != null && !string.IsNullOrEmpty(defaultValueElem.Value))
+            {
+                field.SetAttributeValue(FieldAttrAllowEmpty, "true");
+                logger.LogDebug("Field '{Field}' has a default value — setting allowempty=true", fieldDescriptor);
+            }
+        }
+
         if (visibilityConditionJson != null && columnAttr?.Value is { } condFieldName)
         {
             pendingVisibilityConditions[condFieldName] = visibilityConditionJson;
@@ -484,7 +518,11 @@ public class FormDefinitionPatcher
             conditionExpression = conditionExpression.Trim();
         }
 
-        string? conditionXml = TryParseSimpleCondition(conditionExpression);
+        // Field has a visibility condition — it must not be required, or validation will fire
+        // when the field is hidden. Clear allowempty regardless of whether the condition parses.
+        field.SetAttributeValue(FieldAttrAllowEmpty, "true");
+
+        string? conditionXml = TryParseSimpleCondition(conditionExpression, integerToTextConvertedFields);
         if (conditionXml == null)
         {
             logger.LogWarning("Field '{Field}': visibility condition '{Condition}' is too complex to migrate automatically — set it manually in the XbyK admin UI", fieldDescriptor, conditionExpression);
@@ -493,7 +531,7 @@ public class FormDefinitionPatcher
         return conditionXml;
     }
 
-    private static string? TryParseSimpleCondition(string condition)
+    private static string? TryParseSimpleCondition(string condition, IReadOnlySet<string>? intToTextFields = null)
     {
         // FieldName == value  or  FieldName.Value == value  (KX13 uses .Value suffix)
         var eqMatch = Regex.Match(condition, @"^(\w+)(?:\.Value)?\s*(==|!=)\s*(.+)$");
@@ -529,18 +567,37 @@ public class FormDefinitionPatcher
             return BuildVcXmlDependency(id, fieldName);
         }
 
-        // Integer — uses IsEqualToVisibilityConditionProperties (CompareToValue with XSD type)
+        // Integer literal — if the referenced field was converted from integer to text (e.g. dropdown),
+        // use string comparison so the condition matches the stored text value ("0", "1", …).
         if (int.TryParse(valueStr, out int intVal))
         {
-            string id = op == "==" ? "Kentico.Administration.IsEqualToInteger" : "Kentico.Administration.IsNotEqualToInteger";
-            return BuildVcXmlNumeric(id, fieldName, "int", intVal.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            string valStr = intVal.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (intToTextFields?.Contains(fieldName) == true)
+            {
+                string id = op == "==" ? "Kentico.Administration.IsEqualToString" : "Kentico.Administration.NotEqualsString";
+                return BuildVcXmlString(id, fieldName, valStr);
+            }
+            else
+            {
+                string id = op == "==" ? "Kentico.Administration.IsEqualToInteger" : "Kentico.Administration.IsNotEqualToInteger";
+                return BuildVcXmlNumeric(id, fieldName, valStr);
+            }
         }
 
-        // Decimal — uses IsEqualToVisibilityConditionProperties (CompareToValue with XSD type)
+        // Decimal literal
         if (decimal.TryParse(valueStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out decimal decVal))
         {
-            string id = op == "==" ? "Kentico.Administration.IsEqualToDecimal" : "Kentico.Administration.IsNotEqualToDecimal";
-            return BuildVcXmlNumeric(id, fieldName, "decimal", decVal.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            string valStr = decVal.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (intToTextFields?.Contains(fieldName) == true)
+            {
+                string id = op == "==" ? "Kentico.Administration.IsEqualToString" : "Kentico.Administration.NotEqualsString";
+                return BuildVcXmlString(id, fieldName, valStr);
+            }
+            else
+            {
+                string id = op == "==" ? "Kentico.Administration.IsEqualToDecimal" : "Kentico.Administration.IsNotEqualToDecimal";
+                return BuildVcXmlNumeric(id, fieldName, valStr);
+            }
         }
 
         // Quoted string — uses StringComparisonConditionProperties (Value + CaseSensitive)
@@ -601,14 +658,13 @@ public class FormDefinitionPatcher
         $"</VisibilityConditionConfiguration>";
 
     // For integer/decimal conditions (IsEqualToInteger, IsEqualToDecimal, etc.)
-    // Uses IsEqualToVisibilityConditionProperties: PropertyName + CompareToValue (with XSD type) + Comparison.
-    private static string BuildVcXmlNumeric(string conditionId, string propertyName, string xsdType, string value) =>
+    // Uses a simple Value element — same pattern as string conditions but without CaseSensitive.
+    private static string BuildVcXmlNumeric(string conditionId, string propertyName, string value) =>
         $"<VisibilityConditionConfiguration>" +
         $"<Identifier>{System.Security.SecurityElement.Escape(conditionId)}</Identifier>" +
         $"<Properties>" +
         $"<PropertyName>{System.Security.SecurityElement.Escape(propertyName)}</PropertyName>" +
-        $"<CompareToValue xmlns:q1=\"http://www.w3.org/2001/XMLSchema\" p4:type=\"q1:{xsdType}\" xmlns:p4=\"http://www.w3.org/2001/XMLSchema-instance\">{System.Security.SecurityElement.Escape(value)}</CompareToValue>" +
-        $"<Comparison>Ordinal</Comparison>" +
+        $"<Value>{System.Security.SecurityElement.Escape(value)}</Value>" +
         $"</Properties>" +
         $"</VisibilityConditionConfiguration>";
 
