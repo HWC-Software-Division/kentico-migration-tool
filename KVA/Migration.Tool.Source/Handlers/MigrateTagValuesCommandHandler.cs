@@ -1,4 +1,5 @@
 using System.Data;
+using System.Xml.Linq;
 using CMS.DataEngine;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -14,12 +15,11 @@ namespace Migration.Tool.Source.Handlers;
 /// Assigns K13 DocumentTags (comma-separated tag names stored in CmsDocument)
 /// to XbyK content item taxonomy fields after pages are migrated.
 ///
-/// Storage in XbyK 31.x:
-///   - DocumentTags is a class-specific field stored in the content-type table
-///     (e.g. Plearn_Article.DocumentTags) — NOT in CMS_ContentItemCommonData.
-///   - Format: [{"Identifier":"guid1"},{"Identifier":"guid2"}]
-///   - The field must NOT have external="true" (TagTaxonomyFieldMigration removes it
-///     during --page-types so XbyK creates the column automatically via UMT).
+/// Storage in XbyK 31.x (dual write):
+///   1. class-specific table column  (e.g. Plearn_Article.DocumentTags)
+///      Format: [{"Identifier":"guid1"},{"Identifier":"guid2"}]
+///   2. CMS_ContentItemTag — one row per (LanguageMetadata, FieldGUID, TagGUID)
+///      XbyK uses this table when loading the editing form and for tag search.
 ///
 /// Run AFTER --sites --tags --page-types --pages
 /// </summary>
@@ -31,7 +31,7 @@ public class MigrateTagValuesCommandHandler(
 {
     public async Task<CommandResult> Handle(MigrateTagValuesCommand request, CancellationToken cancellationToken)
     {
-        logger.LogInformation("==== START: MigrateTagValues (DocumentTags → class table JSON) ====");
+        logger.LogInformation("==== START: MigrateTagValues (DocumentTags → class table JSON + CMS_ContentItemTag) ====");
 
         await using var kx13Context = await kx13ContextFactory.CreateDbContextAsync(cancellationToken);
 
@@ -56,7 +56,6 @@ public class MigrateTagValuesCommandHandler(
         logger.LogInformation("Found {Count} K13 documents with DocumentTags", docsWithTags.Count);
 
         // ── Step 2: K13 tag lookup (TagName → TagGuid) ──────────────────────
-        // CmsTagMapper sets TagGUID = cmsTag.TagGuid → K13 TagGuid == XbyK TagGuid
         var allK13Tags = kx13Context.CmsTags
             .Select(t => new { t.TagId, t.TagName, t.TagGroupId, t.TagGuid })
             .ToList();
@@ -69,6 +68,10 @@ public class MigrateTagValuesCommandHandler(
         var tablesWithColumn = GetTablesWithDocumentTagsColumn();
         logger.LogInformation("Tables with DocumentTags column: {Tables}",
             string.Join(", ", tablesWithColumn));
+
+        // ── Step 5: Load DocumentTags field GUIDs per class (for CMS_ContentItemTag) ──
+        var fieldGuids = LoadDocumentTagsFieldGuids();
+        logger.LogInformation("Loaded DocumentTags field GUIDs for {Count} classes", fieldGuids.Count);
 
         int updated = 0;
         int skipped = 0;
@@ -87,15 +90,6 @@ public class MigrateTagValuesCommandHandler(
             {
                 logger.LogWarning("No class table found in XbyK for class '{Class}' (DocId={DocId}) — skipped",
                     doc.ClassName, doc.DocumentId);
-                skipped++;
-                continue;
-            }
-
-            if (!tablesWithColumn.Contains(tableName))
-            {
-                logger.LogWarning(
-                    "Table '{Table}' has no DocumentTags column (class '{Class}') — re-run --page-types first",
-                    tableName, doc.ClassName);
                 skipped++;
                 continue;
             }
@@ -159,25 +153,48 @@ public class MigrateTagValuesCommandHandler(
             var json = "[" + string.Join(",",
                 tagGuids.Select(g => $"{{\"Identifier\":\"{g:D}\"}}")) + "]";
 
-            // ── UPDATE class-specific table for ALL version rows ─────────────
-            // Each version has a row in Plearn_Article linked via ContentItemDataCommonDataID
-            // → CMS_ContentItemCommonData.ContentItemCommonDataID
-            // → CMS_ContentItemCommonData.ContentItemCommonDataContentItemID = contentItemId
-            var rowsUpdated = UpdateClassTable(tableName, contentItemId.Value, json);
-
-            if (rowsUpdated > 0)
+            // ── Write 1: UPDATE class-specific table column (if it exists) ───
+            // Some content types may have the column dropped (e.g. after external=true fix).
+            if (tablesWithColumn.Contains(tableName))
             {
-                updated += rowsUpdated;
+                var rowsUpdated = UpdateClassTable(tableName, contentItemId.Value, json);
+                if (rowsUpdated > 0)
+                {
+                    updated += rowsUpdated;
+                    logger.LogInformation(
+                        "Updated {Rows} row(s) in [{Table}] for DocId={DocId}: {Json}",
+                        rowsUpdated, tableName, doc.DocumentId, json);
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "No rows updated in [{Table}] for ContentItemID={Id} (DocId={DocId}) — pages not migrated?",
+                        tableName, contentItemId.Value, doc.DocumentId);
+                }
+            }
+            else
+            {
+                logger.LogDebug(
+                    "Table [{Table}] has no DocumentTags column — skipping physical column update for DocId={DocId}",
+                    tableName, doc.DocumentId);
+            }
+
+            // ── Write 2: INSERT into CMS_ContentItemTag ─────────────────────
+            // XbyK reads from CMS_ContentItemTag when loading the admin edit form.
+            // Without this, TagSelector shows empty even when the physical column has data.
+            if (fieldGuids.TryGetValue(doc.ClassName, out var fieldGuid))
+            {
+                UpsertContentItemTags(contentItemId.Value, fieldGuid, tagGuids);
                 logger.LogInformation(
-                    "Updated {Rows} row(s) in [{Table}] for DocId={DocId} Class={Class}: {Json}",
-                    rowsUpdated, tableName, doc.DocumentId, doc.ClassName, json);
+                    "Upserted CMS_ContentItemTag for ContentItemID={Id} FieldGUID={FieldGuid} Tags={Count}",
+                    contentItemId.Value, fieldGuid, tagGuids.Count);
+                updated++;
             }
             else
             {
                 logger.LogWarning(
-                    "No rows updated in [{Table}] for ContentItemID={Id} (DocId={DocId}) — pages not migrated?",
-                    tableName, contentItemId.Value, doc.DocumentId);
-                skipped++;
+                    "No taxonomy DocumentTags field GUID found for class '{Class}' — CMS_ContentItemTag skipped",
+                    doc.ClassName);
             }
         }
 
@@ -212,6 +229,42 @@ public class MigrateTagValuesCommandHandler(
         return result;
     }
 
+    // ── Load DocumentTags field GUIDs for taxonomy fields per class ──────────
+    // Used to populate CMS_ContentItemTag.ContentItemTagFieldGUID
+    private static Dictionary<string, Guid> LoadDocumentTagsFieldGuids()
+    {
+        var result = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        var ds = ConnectionHelper.ExecuteQuery(
+            "SELECT ClassName, ClassFormDefinition FROM CMS_Class " +
+            "WHERE ClassFormDefinition LIKE '%DocumentTags%' AND ClassFormDefinition LIKE '%taxonomy%'",
+            null, QueryTypeEnum.SQLQuery);
+
+        foreach (DataRow row in ds.Tables[0].Rows)
+        {
+            var className = row["ClassName"].ToString()!;
+            var formDef = row["ClassFormDefinition"].ToString()!;
+            try
+            {
+                var xml = XDocument.Parse(formDef);
+                var guidStr = xml.Descendants("field")
+                    .Where(f => f.Attribute("column")?.Value == "DocumentTags"
+                             && f.Attribute("columntype")?.Value == "taxonomy"
+                             && f.Attribute("external")?.Value != "true")
+                    .Select(f => f.Attribute("guid")?.Value)
+                    .FirstOrDefault();
+
+                if (guidStr != null && Guid.TryParse(guidStr, out var guid))
+                    result[className] = guid;
+            }
+            catch (Exception ex)
+            {
+                // Non-fatal — just skip this class
+                _ = ex;
+            }
+        }
+        return result;
+    }
+
     // ── Get XbyK ContentItemID from the spoiled DocumentGUID ─────────────────
     private static int? GetContentItemId(Guid commonDataGuid)
     {
@@ -239,7 +292,6 @@ public class MigrateTagValuesCommandHandler(
         var p = new QueryDataParameters { { "json", json }, { "id", contentItemId } };
         ConnectionHelper.ExecuteQuery(updateSql, p, QueryTypeEnum.SQLQuery);
 
-        // Return count of rows that now hold the JSON value
         var countSql = $@"
             SELECT COUNT(*) FROM [{tableName}]
             WHERE  ContentItemDataCommonDataID IN (
@@ -251,6 +303,52 @@ public class MigrateTagValuesCommandHandler(
 
         var countDs = ConnectionHelper.ExecuteQuery(countSql, p, QueryTypeEnum.SQLQuery);
         return Convert.ToInt32(countDs.Tables[0].Rows[0][0]);
+    }
+
+    // ── Upsert CMS_ContentItemTag ─────────────────────────────────────────────
+    // Deletes existing rows for this content item + field, then inserts fresh ones.
+    // One row per (ContentItemLanguageMetadata, FieldGUID, TagGUID).
+    private static void UpsertContentItemTags(int contentItemId, Guid fieldGuid, List<Guid> tagGuids)
+    {
+        // Remove stale tag assignments for this field on this content item
+        var deleteSql = @"
+            DELETE FROM CMS_ContentItemTag
+            WHERE ContentItemTagContentItemLanguageMetadataID IN (
+                SELECT ContentItemLanguageMetadataID
+                FROM   CMS_ContentItemLanguageMetadata
+                WHERE  ContentItemLanguageMetadataContentItemID = @id
+            )
+            AND ContentItemTagFieldGUID = @fieldGuid";
+
+        var dp = new QueryDataParameters { { "id", contentItemId }, { "fieldGuid", fieldGuid } };
+        ConnectionHelper.ExecuteQuery(deleteSql, dp, QueryTypeEnum.SQLQuery);
+
+        // Insert one row per language metadata per tag
+        foreach (var tagGuid in tagGuids)
+        {
+            var insertSql = @"
+                INSERT INTO CMS_ContentItemTag (
+                    ContentItemTagContentItemLanguageMetadataID,
+                    ContentItemTagFieldGUID,
+                    ContentItemTagTagGUID,
+                    ContentItemTagGUID
+                )
+                SELECT
+                    lm.ContentItemLanguageMetadataID,
+                    @fieldGuid,
+                    @tagGuid,
+                    NEWID()
+                FROM CMS_ContentItemLanguageMetadata lm
+                WHERE lm.ContentItemLanguageMetadataContentItemID = @id";
+
+            var ip = new QueryDataParameters
+            {
+                { "id", contentItemId },
+                { "fieldGuid", fieldGuid },
+                { "tagGuid", tagGuid }
+            };
+            ConnectionHelper.ExecuteQuery(insertSql, ip, QueryTypeEnum.SQLQuery);
+        }
     }
 
     // ── Look up tag GUID from the static dicts populated by MigrateTagsCommandHandler ──

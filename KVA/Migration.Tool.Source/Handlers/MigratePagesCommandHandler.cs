@@ -522,6 +522,11 @@ public class MigratePagesCommandHandler(
 
     private void LinkContentItem(string parentItemClassName, int parentItemId, int languageId, string fieldName, Guid linkedItemGUID)
     {
+        if (!CanUseContentItemReference(linkedItemGUID, fieldName, parentItemClassName))
+        {
+            return;
+        }
+
         // There can be multiple common data rows for item in draft
         var commonData = ContentItemCommonDataInfo.Provider.Get()
             .WhereEquals(nameof(ContentItemCommonDataInfo.ContentItemCommonDataContentItemID), parentItemId)
@@ -672,7 +677,14 @@ public class MigratePagesCommandHandler(
 
                 foreach (var childCollection in parentItem.ChildLinks.GroupBy(x => x.fieldName))
                 {
-                    var guidArray = childCollection.Select(x => new { Identifier = mappedSiteNodes[x.node.NodeGUID].ContentItemGuid }).ToArray();
+                    var guidArray = childCollection
+                        .Select(x => mappedSiteNodes.TryGetValue(x.node.NodeGUID, out var mappedNode)
+                            ? (fieldName: x.fieldName, nodeGuid: x.node.NodeGUID, contentItemGuid: mappedNode.ContentItemGuid)
+                            : (fieldName: x.fieldName, nodeGuid: x.node.NodeGUID, contentItemGuid: Guid.Empty))
+                        .Where(x => CanUseContentItemReference(x.contentItemGuid, x.fieldName, parentMappedNode.TargetClassInfo.ClassName, x.nodeGuid))
+                        .Select(x => new { Identifier = x.contentItemGuid })
+                        .ToArray();
+
                     string serializedValue = JsonConvert.SerializeObject(guidArray);
                     dataModel.CustomProperties[childCollection.Key] = serializedValue;
                 }
@@ -727,6 +739,32 @@ public class MigratePagesCommandHandler(
         }
         classInfo.ClassFormDefinition = fi.GetXmlDefinition();
         DataClassInfoProvider.ProviderObject.Set(classInfo);
+    }
+
+    private bool CanUseContentItemReference(Guid contentItemGuid, string fieldName, string ownerClassName, Guid? sourceNodeGuid = null)
+    {
+        if (contentItemGuid == Guid.Empty)
+        {
+            logger.LogWarning(
+                "Skipping empty content item reference for field {FieldName} on {OwnerClassName}. Source node GUID: {SourceNodeGuid}",
+                fieldName,
+                ownerClassName,
+                sourceNodeGuid);
+            return false;
+        }
+
+        if (ContentItemInfo.Provider.Get(contentItemGuid) is null)
+        {
+            logger.LogWarning(
+                "Skipping missing content item reference {ContentItemGuid} for field {FieldName} on {OwnerClassName}. Source node GUID: {SourceNodeGuid}",
+                contentItemGuid,
+                fieldName,
+                ownerClassName,
+                sourceNodeGuid);
+            return false;
+        }
+
+        return true;
     }
 
     [Conditional("DEBUG")]
