@@ -132,10 +132,23 @@ public class TagTaxonomyFieldMigration(
         }
         else
         {
+            // No TaxonomyGroup resolvable → revert to external longtext + TextArea.
+            // Leaving TagSelector WITHOUT TaxonomyGroup causes ArgumentNullException in
+            // TagSelectorComponent.ConfigureClientProperties (XbyK calls .First() on null source).
             logger.LogWarning(
                 "Cannot resolve TaxonomyGUID for field '{Field}' (class '{Class}') — " +
-                "run --tags before --page-types, or ensure DocumentTagGroupId is set in K13",
+                "reverting to external/hidden longtext field. Run --tags before --page-types " +
+                "and ensure K13 DocumentTagGroupId is set to get proper taxonomy support.",
                 fieldDescriptor, formDefinitionPatcher.CurrentClassName);
+
+            columnTypeAttr?.SetValue("longtext");
+            field.SetAttributeValue("external", "true");
+            field.SetAttributeValue("visible", "false");
+            field.SetAttributeValue("enabled", "false");
+            settings.EnsureElement(
+                FormDefinitionPatcher.SettingsElemControlname,
+                e => e.Value = "Kentico.Administration.TextArea"
+            );
         }
 
         // ลบ K13 settings เก่า
