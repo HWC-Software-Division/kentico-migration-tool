@@ -67,6 +67,7 @@ public class FormDefinitionPatcher
 
     private readonly bool altForm;
     private readonly bool allowNullSourceFormControl;
+    private readonly bool preserveSourceControlName;
     private readonly bool classIsCustom;
     private readonly bool classIsDocumentType;
     private readonly bool classIsForm;
@@ -93,7 +94,8 @@ public class FormDefinitionPatcher
         bool discardSysFields,
         bool classIsCustom,
         bool altForm = false,
-        bool allowNullSourceFormControl = false)
+        bool allowNullSourceFormControl = false,
+        bool preserveSourceControlName = false)
     {
         this.logger = logger;
         this.formDefinitionXml = formDefinitionXml;
@@ -104,6 +106,7 @@ public class FormDefinitionPatcher
         this.classIsCustom = classIsCustom;
         this.altForm = altForm;
         this.allowNullSourceFormControl = allowNullSourceFormControl;
+        this.preserveSourceControlName = preserveSourceControlName;
         xDoc = XDocument.Parse(this.formDefinitionXml);
     }
 
@@ -467,6 +470,16 @@ public class FormDefinitionPatcher
         {
             pendingVisibilityConditions[condFieldName] = visibilityConditionJson;
             logger.LogDebug("Queued visibility condition for field '{Field}'", fieldDescriptor);
+        }
+
+        // Custom tables: keep the original K13 <controlname> verbatim (e.g. TextBoxControl, CalendarControl)
+        // for reference. The settings block is cleared by the logic above, so re-add it here with the
+        // source value captured before field migration overwrote it.
+        if (preserveSourceControlName && !string.IsNullOrEmpty(controlName))
+        {
+            field.EnsureElement(FieldElemSettings, s =>
+                s.EnsureElement(SettingsElemControlname, cn => cn.Value = controlName));
+            logger.LogDebug("Field '{Field}' preserved original control name '{ControlName}'", fieldDescriptor, controlName);
         }
 
         if (string.Equals(columnAttr?.Value, "PageInternalRedirectNodeGuid", StringComparison.InvariantCultureIgnoreCase))

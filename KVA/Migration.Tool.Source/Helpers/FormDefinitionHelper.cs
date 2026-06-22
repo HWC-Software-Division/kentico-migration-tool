@@ -19,7 +19,9 @@ public static class FormDefinitionHelper
                 source.ClassIsForm.GetValueOrDefault(false),
                 source.ClassIsDocumentType,
                 isCustomizableSystemClass,
-                classIsCustom
+                classIsCustom,
+                // Custom tables keep their original K13 controlname for reference.
+                preserveSourceControlName: source.ClassIsCustomTable
             );
             patcher.CurrentClassName = source.ClassName;
 
