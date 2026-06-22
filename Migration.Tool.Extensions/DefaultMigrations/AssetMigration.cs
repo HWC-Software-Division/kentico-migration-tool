@@ -110,12 +110,19 @@ public class AssetMigration(
                         }
                         case MigrateAttachmentResultContentItem { Success: true, ContentItemGuid: { } contentItemGuid }:
                         {
-                            mfis =
-                            [
-                                new ContentItemReference { Identifier = contentItemGuid }
-                            ];
-                            hasMigratedAsset = true;
-                            logger.LogTrace("'{FieldName}' migrated Match={Value}", fieldName, result);
+                            if (contentItemGuid != Guid.Empty && ContentItemExists(contentItemGuid))
+                            {
+                                mfis =
+                                [
+                                    new ContentItemReference { Identifier = contentItemGuid }
+                                ];
+                                hasMigratedAsset = true;
+                                logger.LogTrace("'{FieldName}' migrated Match={Value}", fieldName, result);
+                            }
+                            else
+                            {
+                                logger.LogWarning("[Pages] Field '{Field}' (Path+Attachment): content item {Guid} not found in XbyK — skipping reference", fieldName, contentItemGuid);
+                            }
                             break;
                         }
                         default:
@@ -235,12 +242,19 @@ public class AssetMigration(
                         }
                         case MigrateAttachmentResultContentItem { Success: true, ContentItemGuid: { } contentItemGuid }:
                         {
-                            mfis =
-                            [
-                                new ContentItemReference { Identifier = contentItemGuid }
-                            ];
-                            hasMigratedAsset = true;
-                            logger.LogTrace("Content item migrated from attachment '{Field}': '{Value}' to {ContentItemGUID}", fieldName, mg, contentItemGuid);
+                            if (contentItemGuid != Guid.Empty && ContentItemExists(contentItemGuid))
+                            {
+                                mfis =
+                                [
+                                    new ContentItemReference { Identifier = contentItemGuid }
+                                ];
+                                hasMigratedAsset = true;
+                                logger.LogTrace("Content item migrated from attachment '{Field}': '{Value}' to {ContentItemGUID}", fieldName, mg, contentItemGuid);
+                            }
+                            else
+                            {
+                                logger.LogWarning("[Pages] Field '{Field}' (Guid+Attachment): content item {Guid} not found in XbyK — skipping reference", fieldName, contentItemGuid);
+                            }
                             break;
                         }
                         default:
@@ -355,12 +369,19 @@ public class AssetMigration(
                             }
                             case MigrateAttachmentResultContentItem { Success: true, ContentItemGuid: { } contentItemGuid }:
                             {
-                                mfis =
-                                [
-                                    new ContentItemReference { Identifier = contentItemGuid }
-                                ];
-                                hasMigratedAsset = true;
-                                logger.LogTrace("Content item migrated from attachment '{Field}': '{Value}' to {ContentItemGUID}", fieldName, attachmentGuid, contentItemGuid);
+                                if (contentItemGuid != Guid.Empty && ContentItemExists(contentItemGuid))
+                                {
+                                    mfis =
+                                    [
+                                        new ContentItemReference { Identifier = contentItemGuid }
+                                    ];
+                                    hasMigratedAsset = true;
+                                    logger.LogTrace("Content item migrated from attachment '{Field}': '{Value}' to {ContentItemGUID}", fieldName, attachmentGuid, contentItemGuid);
+                                }
+                                else
+                                {
+                                    logger.LogWarning("[Pages] Field '{Field}' (UserControlForFile+Guid): content item {Guid} not found in XbyK — skipping reference", fieldName, contentItemGuid);
+                                }
                                 break;
                             }
                             default:
@@ -385,12 +406,19 @@ public class AssetMigration(
                             }
                             case MigrateAttachmentResultContentItem { Success: true, ContentItemGuid: { } contentItemGuid }:
                             {
-                                mfis =
-                                [
-                                    new ContentItemReference { Identifier = contentItemGuid }
-                                ];
-                                hasMigratedAsset = true;
-                                logger.LogTrace("Content item migrated from attachment '{Field}': '{Value}' to {ContentItemGUID}", fieldName, attachmentGuid, contentItemGuid);
+                                if (contentItemGuid != Guid.Empty && ContentItemExists(contentItemGuid))
+                                {
+                                    mfis =
+                                    [
+                                        new ContentItemReference { Identifier = contentItemGuid }
+                                    ];
+                                    hasMigratedAsset = true;
+                                    logger.LogTrace("Content item migrated from attachment '{Field}': '{Value}' to {ContentItemGUID}", fieldName, attachmentGuid, contentItemGuid);
+                                }
+                                else
+                                {
+                                    logger.LogWarning("[Pages] Field '{Field}' (UserControlForFile+string): content item {Guid} not found in XbyK — skipping reference", fieldName, contentItemGuid);
+                                }
                                 break;
                             }
                             default:
