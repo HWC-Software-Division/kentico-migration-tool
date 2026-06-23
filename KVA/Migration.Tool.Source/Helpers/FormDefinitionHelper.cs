@@ -24,8 +24,10 @@ public static class FormDefinitionHelper
                 // Custom tables keep their original K13 field definition (settings + dropdown
                 // dependency attributes) verbatim for reference.
                 preserveSourceFieldDefinition: source.ClassIsCustomTable
-            );
-            patcher.CurrentClassName = source.ClassName;
+            )
+            {
+                CurrentClassName = source.ClassName
+            };
 
             patcher.PatchFields();
             patcher.RemoveCategories(); // TODO tk: 2022-10-11 remove when supported

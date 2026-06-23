@@ -35,6 +35,12 @@ public class MigrateContactManagementCommandHandler(
     {
         countryMigrator.MigrateCountriesAndStates();
 
+        // Contact statuses must be migrated before contacts (FK Contact.ContactStatusID -> OM_ContactStatus).
+        if (MigrateContactStatuses() is { } csr)
+        {
+            return Task.FromResult(csr);
+        }
+
         if (MigrateContacts() is { } ccr)
         {
             return Task.FromResult(ccr);
@@ -45,10 +51,61 @@ public class MigrateContactManagementCommandHandler(
             return Task.FromResult(acr);
         }
 
+        // Contact groups must be migrated before their members (FK ContactGroupMember -> ContactGroup).
+        if (MigrateContactGroups() is { } cgr)
+        {
+            return Task.FromResult(cgr);
+        }
+
+        if (MigrateContactGroupMembers() is { } cgmr)
+        {
+            return Task.FromResult(cgmr);
+        }
+
         return Task.FromResult<CommandResult>(new GenericCommandResult());
     }
 
     #region "Migrate contacts"
+
+    private static readonly string[] contactStatusColumns =
+    [
+        nameof(KX13M.OmContactStatus.ContactStatusId),
+        nameof(KX13M.OmContactStatus.ContactStatusName),
+        nameof(KX13M.OmContactStatus.ContactStatusDisplayName),
+        nameof(KX13M.OmContactStatus.ContactStatusDescription)
+    ];
+
+    private CommandResult? MigrateContactStatuses()
+    {
+        if (bulkDataCopyService.CheckIfDataExistsInTargetTable("OM_ContactStatus"))
+        {
+            protocol.Append(HandbookReferences.DataMustNotExistInTargetInstanceTable("OM_ContactStatus"));
+            logger.LogError("Data must not exist in target instance table, remove data before proceeding");
+            return new CommandFailureResult();
+        }
+
+        var bulkCopyRequest = new BulkCopyRequest(
+            "OM_ContactStatus",
+            _ => true,
+            _ => true,
+            50000,
+            contactStatusColumns.ToList(),
+            OrderBy: nameof(KX13M.OmContactStatus.ContactStatusId)
+        );
+
+        logger.LogTrace("Bulk data copy request: {Request}", bulkCopyRequest);
+        try
+        {
+            bulkDataCopyService.CopyTableToTable(bulkCopyRequest);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to migrate contact statuses");
+            return new CommandFailureResult();
+        }
+
+        return null;
+    }
 
     private CommandResult? MigrateContacts()
     {
@@ -82,8 +139,18 @@ public class MigrateContactManagementCommandHandler(
             // No support 2022-07-07  { nameof(ContactInfo.ContactSalesForceLeadReplicationDisabled), nameof(KXO.Models.OmContact.ContactSalesForceLeadReplicationDisabled) },
             // No support 2022-07-07  { nameof(ContactInfo.ContactSalesForceLeadReplicationDateTime), nameof(KXO.Models.OmContact.ContactSalesForceLeadReplicationDateTime) },
             // No support 2022-07-07  { nameof(ContactInfo.ContactSalesForceLeadReplicationSuspensionDateTime), nameof(KXO.Models.OmContact.ContactSalesForceLeadReplicationSuspensionDateTime) },
-            { nameof(KX13M.OmContact.ContactCompanyName), nameof(ContactInfo.ContactCompanyName) }
-            // No support 2022-07-07  { nameof(ContactInfo.ContactSalesForceLeadReplicationRequired), nameof(KXO.Models.OmContact.ContactSalesForceLeadReplicationRequired) },
+            { nameof(KX13M.OmContact.ContactCompanyName), nameof(ContactInfo.ContactCompanyName) },
+            // Columns supported by the current XbyK OM_Contact schema (source/target column names match,
+            // so the same name is used on both sides — case-insensitive matching handles ID/Id casing).
+            { nameof(KX13M.OmContact.ContactBirthday), nameof(KX13M.OmContact.ContactBirthday) },
+            { nameof(KX13M.OmContact.ContactStatusId), nameof(KX13M.OmContact.ContactStatusId) },
+            { nameof(KX13M.OmContact.ContactMonitored), nameof(KX13M.OmContact.ContactMonitored) },
+            { nameof(KX13M.OmContact.ContactBounces), nameof(KX13M.OmContact.ContactBounces) },
+            { nameof(KX13M.OmContact.ContactSalesForceLeadId), nameof(KX13M.OmContact.ContactSalesForceLeadId) },
+            { nameof(KX13M.OmContact.ContactSalesForceLeadReplicationDisabled), nameof(KX13M.OmContact.ContactSalesForceLeadReplicationDisabled) },
+            { nameof(KX13M.OmContact.ContactSalesForceLeadReplicationDateTime), nameof(KX13M.OmContact.ContactSalesForceLeadReplicationDateTime) },
+            { nameof(KX13M.OmContact.ContactSalesForceLeadReplicationSuspensionDateTime), nameof(KX13M.OmContact.ContactSalesForceLeadReplicationSuspensionDateTime) },
+            { nameof(KX13M.OmContact.ContactSalesForceLeadReplicationRequired), nameof(KX13M.OmContact.ContactSalesForceLeadReplicationRequired) }
         };
 
         foreach (var cfi in kxpClassFacade.GetCustomizedFieldInfos(ContactInfo.TYPEINFO.ObjectClassName))
@@ -229,6 +296,13 @@ public class MigrateContactManagementCommandHandler(
             }
         }
 
+        // ContactStatusID is a FK to OM_ContactStatus (migrated as-is with KeepIdentity, so IDs are preserved).
+        // Map 0 -> NULL to avoid a foreign key violation for contacts without a status.
+        if (columnName.Equals("ContactStatusID", StringComparison.InvariantCultureIgnoreCase) && value is int sourceStatusId && sourceStatusId == 0)
+        {
+            return ValueInterceptorResult.ReplaceValue(null);
+        }
+
 
         return ValueInterceptorResult.DoNothing;
     }
@@ -245,8 +319,9 @@ public class MigrateContactManagementCommandHandler(
             { nameof(KX13M.OmActivity.ActivityContactId), nameof(ActivityInfo.ActivityContactID) },
             { nameof(KX13M.OmActivity.ActivityCreated), nameof(ActivityInfo.ActivityCreated) },
             { nameof(KX13M.OmActivity.ActivityType), nameof(ActivityInfo.ActivityType) },
-            // No support 2022-07-07  { nameof(ActivityInfo.ActivityItemId), nameof(KXO.Models.OmActivity.ActivityItemId) },
-            // No support 2022-07-07  { nameof(ActivityInfo.ActivityItemDetailId), nameof(KXO.Models.OmActivity.ActivityItemDetailId) },
+            // Supported by the current XbyK OM_Activity schema (same column name source/target).
+            { nameof(KX13M.OmActivity.ActivityItemId), nameof(KX13M.OmActivity.ActivityItemId) },
+            { nameof(KX13M.OmActivity.ActivityItemDetailId), nameof(KX13M.OmActivity.ActivityItemDetailId) },
             { nameof(KX13M.OmActivity.ActivityValue), nameof(ActivityInfo.ActivityValue) },
             { nameof(KX13M.OmActivity.ActivityUrl), nameof(ActivityInfo.ActivityURL) },
             { nameof(KX13M.OmActivity.ActivityTitle), nameof(ActivityInfo.ActivityTitle) },
@@ -374,6 +449,100 @@ public class MigrateContactManagementCommandHandler(
         }
 
         return ValueInterceptorResult.DoNothing;
+    }
+
+    #endregion
+
+    #region "Migrate contact groups"
+
+    // Columns copied verbatim from K13 -> XbyK. Bulk copy keeps identity (ContactGroupID / member ID),
+    // so the FK between members and groups — and member references to contacts (ContactID) — stay valid.
+    private static readonly string[] contactGroupColumns =
+    [
+        nameof(KX13M.OmContactGroup.ContactGroupId),
+        nameof(KX13M.OmContactGroup.ContactGroupName),
+        nameof(KX13M.OmContactGroup.ContactGroupDisplayName),
+        nameof(KX13M.OmContactGroup.ContactGroupDescription),
+        nameof(KX13M.OmContactGroup.ContactGroupDynamicCondition),
+        nameof(KX13M.OmContactGroup.ContactGroupEnabled),
+        nameof(KX13M.OmContactGroup.ContactGroupLastModified),
+        nameof(KX13M.OmContactGroup.ContactGroupGuid),
+        nameof(KX13M.OmContactGroup.ContactGroupStatus)
+    ];
+
+    private static readonly string[] contactGroupMemberColumns =
+    [
+        nameof(KX13M.OmContactGroupMember.ContactGroupMemberId),
+        nameof(KX13M.OmContactGroupMember.ContactGroupMemberContactGroupId),
+        nameof(KX13M.OmContactGroupMember.ContactGroupMemberType),
+        nameof(KX13M.OmContactGroupMember.ContactGroupMemberRelatedId),
+        nameof(KX13M.OmContactGroupMember.ContactGroupMemberFromCondition),
+        nameof(KX13M.OmContactGroupMember.ContactGroupMemberFromAccount),
+        nameof(KX13M.OmContactGroupMember.ContactGroupMemberFromManual)
+    ];
+
+    private CommandResult? MigrateContactGroups()
+    {
+        if (bulkDataCopyService.CheckIfDataExistsInTargetTable("OM_ContactGroup"))
+        {
+            protocol.Append(HandbookReferences.DataMustNotExistInTargetInstanceTable("OM_ContactGroup"));
+            logger.LogError("Data must not exist in target instance table, remove data before proceeding");
+            return new CommandFailureResult();
+        }
+
+        var bulkCopyRequest = new BulkCopyRequest(
+            "OM_ContactGroup",
+            _ => true,
+            _ => true,
+            50000,
+            contactGroupColumns.ToList(),
+            OrderBy: nameof(KX13M.OmContactGroup.ContactGroupId)
+        );
+
+        logger.LogTrace("Bulk data copy request: {Request}", bulkCopyRequest);
+        try
+        {
+            bulkDataCopyService.CopyTableToTable(bulkCopyRequest);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to migrate contact groups");
+            return new CommandFailureResult();
+        }
+
+        return null;
+    }
+
+    private CommandResult? MigrateContactGroupMembers()
+    {
+        if (bulkDataCopyService.CheckIfDataExistsInTargetTable("OM_ContactGroupMember"))
+        {
+            protocol.Append(HandbookReferences.DataMustNotExistInTargetInstanceTable("OM_ContactGroupMember"));
+            logger.LogError("Data must not exist in target instance table, remove data before proceeding");
+            return new CommandFailureResult();
+        }
+
+        var bulkCopyRequest = new BulkCopyRequest(
+            "OM_ContactGroupMember",
+            _ => true,
+            _ => true,
+            50000,
+            contactGroupMemberColumns.ToList(),
+            OrderBy: nameof(KX13M.OmContactGroupMember.ContactGroupMemberId)
+        );
+
+        logger.LogTrace("Bulk data copy request: {Request}", bulkCopyRequest);
+        try
+        {
+            bulkDataCopyService.CopyTableToTable(bulkCopyRequest);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to migrate contact group members");
+            return new CommandFailureResult();
+        }
+
+        return null;
     }
 
     #endregion
