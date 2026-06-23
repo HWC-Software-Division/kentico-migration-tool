@@ -24,8 +24,10 @@ public static class FormDefinitionHelper
                 // Custom tables keep their original K13 field definition (settings + dropdown
                 // dependency attributes) verbatim for reference.
                 preserveSourceFieldDefinition: source.ClassIsCustomTable
-            );
-            patcher.CurrentClassName = source.ClassName;
+            )
+            {
+                CurrentClassName = source.ClassName
+            };
 
             patcher.PatchFields();
             patcher.RemoveCategories(); // TODO tk: 2022-10-11 remove when supported
@@ -38,7 +40,9 @@ public static class FormDefinitionHelper
 
             var formInfo = new FormInfo(result);
             ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
-            target.ClassFormDefinition = ReinjectDependencyAttributes(formInfo.GetXmlDefinition(), patcher.GetPendingDependencyAttributes());
+            target.ClassFormDefinition = EnsureVisibilityConditionOrdering(
+                ReinjectDependencyAttributes(formInfo.GetXmlDefinition(), patcher.GetPendingDependencyAttributes()),
+                logger, source.ClassName);
         }
         else
         {
@@ -73,7 +77,7 @@ public static class FormDefinitionHelper
 
             var formInfo = new FormInfo(result);
             ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
-            target.ClassFormDefinition = formInfo.GetXmlDefinition();
+            target.ClassFormDefinition = EnsureVisibilityConditionOrdering(formInfo.GetXmlDefinition(), logger, null);
         }
         else
         {
@@ -124,5 +128,92 @@ public static class FormDefinitionHelper
                 formInfo.UpdateFormField(fieldName, ffi);
             }
         }
+    }
+
+    /// <summary>
+    /// XbyK requires that any field referenced by a visibility condition must appear
+    /// logically before the field that owns the condition.  K13 ClassFormDefinition XML
+    /// sometimes places the referenced field AFTER the dependent field.
+    ///
+    /// Called AFTER ApplyVisibilityConditions() so that visibilityconditiondata elements
+    /// are already present in the XML. Iterates until ordering is stable.
+    /// </summary>
+    private static string EnsureVisibilityConditionOrdering(string formDefinitionXml, ILogger logger, string? className)
+    {
+        if (string.IsNullOrWhiteSpace(formDefinitionXml))
+        {
+            return formDefinitionXml;
+        }
+
+        XDocument xDoc;
+        try
+        { xDoc = XDocument.Parse(formDefinitionXml); }
+        catch { return formDefinitionXml; }
+
+        if (xDoc.Root is null)
+        {
+            return formDefinitionXml;
+        }
+
+        const string fieldElem = "field";
+        const string fieldAttrColumn = "column";
+
+        bool changed = true;
+        int maxPasses = xDoc.Root.Elements(fieldElem).Count() + 1;
+
+        for (int pass = 0; pass < maxPasses && changed; pass++)
+        {
+            changed = false;
+            var fields = xDoc.Root.Elements(fieldElem).ToList();
+
+            var colToIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < fields.Count; i++)
+            {
+                var col = fields[i].Attribute(fieldAttrColumn)?.Value;
+                if (col != null)
+                {
+                    colToIndex[col] = i;
+                }
+            }
+
+            for (int i = 0; i < fields.Count; i++)
+            {
+                var vcData = fields[i].Element("visibilityconditiondata");
+                if (vcData is null)
+                {
+                    continue;
+                }
+
+                var refFieldName = vcData.Descendants("PropertyName").FirstOrDefault()?.Value;
+                if (string.IsNullOrEmpty(refFieldName))
+                {
+                    continue;
+                }
+
+                if (!colToIndex.TryGetValue(refFieldName, out var refIdx))
+                {
+                    continue;
+                }
+
+                if (refIdx < i)
+                {
+                    continue;
+                }
+
+                var refElement = fields[refIdx];
+                refElement.Remove();
+                fields[i].AddBeforeSelf(refElement);
+
+                logger.LogWarning(
+                    "Reordered field '{RefField}' to precede '{Field}' (class '{Class}') — " +
+                    "XbyK requires visibility-condition target fields to precede the field that depends on them.",
+                    refFieldName, fields[i].Attribute(fieldAttrColumn)?.Value, className ?? "<unknown>");
+
+                changed = true;
+                break;
+            }
+        }
+
+        return xDoc.Root.ToString();
     }
 }
