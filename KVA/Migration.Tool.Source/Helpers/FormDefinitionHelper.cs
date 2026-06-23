@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using CMS.DataEngine;
 using CMS.FormEngine;
@@ -21,7 +20,10 @@ public static class FormDefinitionHelper
                 source.ClassIsForm.GetValueOrDefault(false),
                 source.ClassIsDocumentType,
                 isCustomizableSystemClass,
-                classIsCustom
+                classIsCustom,
+                // Custom tables keep their original K13 field definition (settings + dropdown
+                // dependency attributes) verbatim for reference.
+                preserveSourceFieldDefinition: source.ClassIsCustomTable
             );
             patcher.CurrentClassName = source.ClassName;
 
@@ -36,7 +38,7 @@ public static class FormDefinitionHelper
 
             var formInfo = new FormInfo(result);
             ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
-            target.ClassFormDefinition = EnsureVisibilityConditionOrdering(formInfo.GetXmlDefinition(), logger, source.ClassName);
+            target.ClassFormDefinition = ReinjectDependencyAttributes(formInfo.GetXmlDefinition(), patcher.GetPendingDependencyAttributes());
         }
         else
         {
@@ -71,12 +73,44 @@ public static class FormDefinitionHelper
 
             var formInfo = new FormInfo(result);
             ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
-            target.ClassFormDefinition = EnsureVisibilityConditionOrdering(formInfo.GetXmlDefinition(), logger, null);
+            target.ClassFormDefinition = formInfo.GetXmlDefinition();
         }
         else
         {
             target.ClassFormDefinition = new FormInfo().GetXmlDefinition();
         }
+    }
+
+    /// <summary>
+    /// Re-applies K13 dropdown dependency attributes (hasdependingfields / dependsonanotherfield) to the
+    /// final form definition. The FormInfo round-trip strips field attributes it does not recognise, so for
+    /// custom tables these are restored here, matched by field GUID.
+    /// </summary>
+    private static string ReinjectDependencyAttributes(string formDefinitionXml,
+        IReadOnlyDictionary<string, (string? HasDependingFields, string? DependsOnAnotherField)> dependencyAttributes)
+    {
+        if (dependencyAttributes.Count == 0)
+        {
+            return formDefinitionXml;
+        }
+
+        var doc = XDocument.Parse(formDefinitionXml);
+        foreach (var field in doc.Descendants("field"))
+        {
+            if (field.Attribute("guid")?.Value is { } guid && dependencyAttributes.TryGetValue(guid, out var attrs))
+            {
+                if (attrs.HasDependingFields != null)
+                {
+                    field.SetAttributeValue(FormDefinitionPatcher.FieldAttrHasDependingFields, attrs.HasDependingFields);
+                }
+                if (attrs.DependsOnAnotherField != null)
+                {
+                    field.SetAttributeValue(FormDefinitionPatcher.FieldAttrDependsOnAnotherField, attrs.DependsOnAnotherField);
+                }
+            }
+        }
+
+        return doc.ToString(SaveOptions.DisableFormatting);
     }
 
     private static void ApplyVisibilityConditions(FormInfo formInfo, IReadOnlyDictionary<string, string> conditions)
@@ -90,73 +124,5 @@ public static class FormDefinitionHelper
                 formInfo.UpdateFormField(fieldName, ffi);
             }
         }
-    }
-
-    /// <summary>
-    /// XbyK requires that any field referenced by a visibility condition must appear
-    /// logically before the field that owns the condition.  K13 ClassFormDefinition XML
-    /// sometimes places the referenced field AFTER the dependent field.
-    ///
-    /// This method is called AFTER ApplyVisibilityConditions() so that
-    /// visibilityconditiondata elements are already present in the XML.
-    /// It iterates until ordering is stable, moving each referenced field
-    /// to just before the first field that depends on it.
-    /// </summary>
-    private static string EnsureVisibilityConditionOrdering(string formDefinitionXml, ILogger logger, string? className)
-    {
-        if (string.IsNullOrWhiteSpace(formDefinitionXml)) return formDefinitionXml;
-
-        XDocument xDoc;
-        try { xDoc = XDocument.Parse(formDefinitionXml); }
-        catch { return formDefinitionXml; }
-
-        if (xDoc.Root is null) return formDefinitionXml;
-
-        const string fieldElem = "field";
-        const string fieldAttrColumn = "column";
-
-        bool changed = true;
-        int maxPasses = xDoc.Root.Elements(fieldElem).Count() + 1;
-
-        for (int pass = 0; pass < maxPasses && changed; pass++)
-        {
-            changed = false;
-            var fields = xDoc.Root.Elements(fieldElem).ToList();
-
-            var colToIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < fields.Count; i++)
-            {
-                var col = fields[i].Attribute(fieldAttrColumn)?.Value;
-                if (col != null) colToIndex[col] = i;
-            }
-
-            for (int i = 0; i < fields.Count; i++)
-            {
-                var vcData = fields[i].Element("visibilityconditiondata");
-                if (vcData is null) continue;
-
-                // <PropertyName>FieldName</PropertyName> — the field this condition depends on
-                var refFieldName = vcData.Descendants("PropertyName").FirstOrDefault()?.Value;
-                if (string.IsNullOrEmpty(refFieldName)) continue;
-
-                if (!colToIndex.TryGetValue(refFieldName, out var refIdx)) continue;
-                if (refIdx < i) continue; // already in correct order
-
-                // Move the referenced field to just before the field that depends on it
-                var refElement = fields[refIdx];
-                refElement.Remove();
-                fields[i].AddBeforeSelf(refElement);
-
-                logger.LogWarning(
-                    "Reordered field '{RefField}' to precede '{Field}' (class '{Class}') — " +
-                    "XbyK requires visibility-condition target fields to precede the field that depends on them.",
-                    refFieldName, fields[i].Attribute(fieldAttrColumn)?.Value, className ?? "<unknown>");
-
-                changed = true;
-                break; // restart scan with updated field list
-            }
-        }
-
-        return xDoc.Root.ToString();
     }
 }

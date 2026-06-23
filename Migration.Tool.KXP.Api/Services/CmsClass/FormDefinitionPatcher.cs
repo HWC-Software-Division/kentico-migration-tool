@@ -42,6 +42,10 @@ public class FormDefinitionPatcher
     public const string FieldAttrColumnsize = "columnsize";
     public const string PropertiesElemVisiblemacro = "visiblemacro";
     public const string FieldElemVisibilityConditionData = "visibilityconditiondata";
+    // K13 dropdown dependency attributes (cascading dropdowns) — not part of the XbyK schema,
+    // but preserved verbatim for custom tables so the original relation is not lost.
+    public const string FieldAttrHasDependingFields = "hasdependingfields";
+    public const string FieldAttrDependsOnAnotherField = "dependsonanotherfield";
 
     private readonly IReadOnlySet<string> allowedFieldAttributes = new HashSet<string>([
         // taken from FormFieldInfo.GetAttributes() method
@@ -67,6 +71,7 @@ public class FormDefinitionPatcher
 
     private readonly bool altForm;
     private readonly bool allowNullSourceFormControl;
+    private readonly bool preserveSourceFieldDefinition;
     private readonly bool classIsCustom;
     private readonly bool classIsDocumentType;
     private readonly bool classIsForm;
@@ -77,6 +82,9 @@ public class FormDefinitionPatcher
     private readonly ILogger logger;
     private readonly XDocument xDoc;
     private readonly Dictionary<string, string> pendingVisibilityConditions = new();
+    // Custom tables only: dropdown dependency attributes (keyed by field GUID) that must be
+    // re-applied after the FormInfo round-trip, which strips field attributes it does not recognise.
+    private readonly Dictionary<string, (string? HasDependingFields, string? DependsOnAnotherField)> pendingDependencyAttributes = new();
     // Integer fields converted to text (due to dropdown/radio control) — visibility conditions
     // that reference these fields must use string comparison instead of integer comparison.
     private readonly HashSet<string> integerToTextConvertedFields = new(StringComparer.OrdinalIgnoreCase);
@@ -93,7 +101,8 @@ public class FormDefinitionPatcher
         bool discardSysFields,
         bool classIsCustom,
         bool altForm = false,
-        bool allowNullSourceFormControl = false)
+        bool allowNullSourceFormControl = false,
+        bool preserveSourceFieldDefinition = false)
     {
         this.logger = logger;
         this.formDefinitionXml = formDefinitionXml;
@@ -104,6 +113,7 @@ public class FormDefinitionPatcher
         this.classIsCustom = classIsCustom;
         this.altForm = altForm;
         this.allowNullSourceFormControl = allowNullSourceFormControl;
+        this.preserveSourceFieldDefinition = preserveSourceFieldDefinition;
         xDoc = XDocument.Parse(this.formDefinitionXml);
     }
 
@@ -205,8 +215,23 @@ public class FormDefinitionPatcher
 
     public IReadOnlyDictionary<string, string> GetPendingVisibilityConditions() => pendingVisibilityConditions;
 
+    public IReadOnlyDictionary<string, (string? HasDependingFields, string? DependsOnAnotherField)> GetPendingDependencyAttributes() => pendingDependencyAttributes;
+
     public void PatchField(XElement field)
     {
+        // Custom tables: snapshot the original K13 <settings> block and the dropdown dependency
+        // attributes before any patching mutates/removes them, so they can be restored verbatim
+        // at the end of this method (controlname, Query/SQL DataSource, DisplayActualValueAsItem, …).
+        XElement? originalSettings = null;
+        string? originalHasDependingFields = null;
+        string? originalDependsOnAnotherField = null;
+        if (preserveSourceFieldDefinition)
+        {
+            originalSettings = field.Element(FieldElemSettings) is { } s ? new XElement(s) : null;
+            originalHasDependingFields = field.Attribute(FieldAttrHasDependingFields)?.Value;
+            originalDependsOnAnotherField = field.Attribute(FieldAttrDependsOnAnotherField)?.Value;
+        }
+
         var columnAttr = field.Attribute(FieldAttrColumn);
         var systemAttr = field.Attribute(FieldAttrSystem);
         var isPkAttr = field.Attribute(FieldAttrIspk);
@@ -467,6 +492,37 @@ public class FormDefinitionPatcher
         {
             pendingVisibilityConditions[condFieldName] = visibilityConditionJson;
             logger.LogDebug("Queued visibility condition for field '{Field}'", fieldDescriptor);
+        }
+
+        // Custom tables: restore the original K13 field definition verbatim for reference.
+        // The logic above clears <settings> (controlname, Query/SQL DataSource, dropdown options …)
+        // and drops non-schema attributes, so re-apply the snapshot captured at method entry.
+        if (preserveSourceFieldDefinition)
+        {
+            if (originalSettings != null)
+            {
+                field.Element(FieldElemSettings)?.Remove();
+                field.Add(new XElement(originalSettings));
+                logger.LogDebug("Field '{Field}' restored original K13 settings (controlname, Query, …)", fieldDescriptor);
+            }
+
+            // Cascading-dropdown dependency hints — keep so the relation between fields is not lost.
+            if (originalHasDependingFields != null)
+            {
+                field.SetAttributeValue(FieldAttrHasDependingFields, originalHasDependingFields);
+            }
+            if (originalDependsOnAnotherField != null)
+            {
+                field.SetAttributeValue(FieldAttrDependsOnAnotherField, originalDependsOnAnotherField);
+            }
+
+            // The FormInfo round-trip in FormDefinitionHelper drops these non-schema attributes,
+            // so record them (keyed by GUID) to be re-injected into the final XML afterwards.
+            if ((originalHasDependingFields != null || originalDependsOnAnotherField != null)
+                && guidAttr?.Value is { } fieldGuid)
+            {
+                pendingDependencyAttributes[fieldGuid] = (originalHasDependingFields, originalDependsOnAnotherField);
+            }
         }
 
         if (string.Equals(columnAttr?.Value, "PageInternalRedirectNodeGuid", StringComparison.InvariantCultureIgnoreCase))

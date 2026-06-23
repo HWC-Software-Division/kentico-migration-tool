@@ -940,22 +940,38 @@ public class ContentItemMapper(
                         // GUID field -> Page selector value
                         if (sourceValue != null &&
                             sourceValue != DBNull.Value &&
-                            Guid.TryParse(sourceValue.ToString(), out var sourceGuid))
+                            Guid.TryParse(sourceValue.ToString(), out var sourceGuid) &&
+                            sourceGuid != Guid.Empty)
                         {
                             var patchedGuid = spoiledGuidContext.EnsureNodeGuid(
                                 sourceGuid,
                                 documentSourceObjectContext.CmsTree.NodeSiteID
                             );
 
-                            var pageReferences = new[]
+                            if (ContentItemInfo.Provider.Get(patchedGuid) is null)
                             {
-            new
-            {
-                WebPageGuid = patchedGuid
-            }
-        };
-
-                            target.SetValueAsJson(targetFieldName, pageReferences);
+                                logger.LogWarning("[Pages] Field '{Field}' (PageType='{PageType}'): referenced page GUID {PatchedGuid} not found in CMS_ContentItem — skipping reference to avoid FK violation",
+                                    targetFieldName, sourceNodeClass.ClassName, patchedGuid);
+                                target[targetFieldName] = null;
+                            }
+                            else
+                            {
+                                var pageReferences = new[]
+                                {
+                                    new
+                                    {
+                                        WebPageGuid = patchedGuid
+                                    }
+                                };
+                                target.SetValueAsJson(targetFieldName, pageReferences);
+                            }
+                        }
+                        else if (sourceValue != null && sourceValue != DBNull.Value && Guid.TryParse(sourceValue.ToString(), out _))
+                        {
+                            // sourceGuid == Guid.Empty: no page selected — skip reference to avoid FK violation
+                            logger.LogWarning("[Pages] Field '{Field}' (PageType='{PageType}'): GUID page selector has value Guid.Empty — no page reference will be created",
+                                targetFieldName, sourceNodeClass.ClassName);
+                            target[targetFieldName] = null;
                         }
                         else
                         {
@@ -973,13 +989,29 @@ public class ContentItemMapper(
                                 {
                                     EnsureAllowedType(targetClassName, newFormInfo, targetFieldName, relation.RightNode.NodeClassID);
 
+                                    var relGuid = spoiledGuidContext.EnsureNodeGuid(
+                                        relation.RightNode.NodeGUID,
+                                        relation.RightNode.NodeSiteID,
+                                        relation.RightNode.NodeID
+                                    );
+
+                                    if (relGuid == Guid.Empty)
+                                    {
+                                        logger.LogWarning("[Pages] Field '{Field}' (PageType='{PageType}') [Relations]: relation RightNode has Guid.Empty — skipping to avoid FK violation",
+                                            targetFieldName, sourceNodeClass.ClassName);
+                                        continue;
+                                    }
+
+                                    if (ContentItemInfo.Provider.Get(relGuid) is null)
+                                    {
+                                        logger.LogWarning("[Pages] Field '{Field}' (PageType='{PageType}') [Relations]: relation RightNode GUID {RelGuid} not found in CMS_ContentItem — skipping to avoid FK violation",
+                                            targetFieldName, sourceNodeClass.ClassName, relGuid);
+                                        continue;
+                                    }
+
                                     pageReferences.Add(new
                                     {
-                                        WebPageGuid = spoiledGuidContext.EnsureNodeGuid(
-                                            relation.RightNode.NodeGUID,
-                                            relation.RightNode.NodeSiteID,
-                                            relation.RightNode.NodeID
-                                        )
+                                        WebPageGuid = relGuid
                                     });
                                 }
                             }
@@ -994,22 +1026,54 @@ public class ContentItemMapper(
                         if (sourceValue is string pageReferenceJson)
                         {
                             var parsed = JObject.Parse(pageReferenceJson);
-                            foreach (var jToken in parsed.DescendantsAndSelf())
+                            bool hasEmptyGuid = false;
+                            foreach (var jToken in parsed.DescendantsAndSelf().ToList())
                             {
                                 if (jToken.Path.EndsWith("NodeGUID", StringComparison.InvariantCultureIgnoreCase))
                                 {
-                                    var patchedGuid = spoiledGuidContext.EnsureNodeGuid(jToken.Value<Guid>(), documentSourceObjectContext.CmsTree.NodeSiteID);
+                                    var originalGuid = jToken.Value<Guid>();
+                                    if (originalGuid == Guid.Empty)
+                                    {
+                                        hasEmptyGuid = true;
+                                        logger.LogWarning("[Pages] Field '{Field}' (PageType='{PageType}') [NewVersion]: NodeGUID is Guid.Empty in JSON — skipping reference",
+                                            targetFieldName, sourceNodeClass.ClassName);
+                                        continue;
+                                    }
+                                    var patchedGuid = spoiledGuidContext.EnsureNodeGuid(originalGuid, documentSourceObjectContext.CmsTree.NodeSiteID);
                                     jToken.Replace(JToken.FromObject(patchedGuid));
                                 }
                             }
 
-                            target[targetFieldName] = valueConvertor.Invoke(parsed.ToString().Replace("\"NodeGuid\"", "\"WebPageGuid\""), convertorContext);
+                            if (hasEmptyGuid)
+                            {
+                                target[targetFieldName] = null;
+                            }
+                            else
+                            {
+                                target[targetFieldName] = valueConvertor.Invoke(parsed.ToString().Replace("\"NodeGuid\"", "\"WebPageGuid\""), convertorContext);
+                            }
                         }
                     }
                 }
                 else
                 {
                     target[targetFieldName] = valueConvertor.Invoke(sourceValue, convertorContext);
+
+                    // SAFETY GUARD: for guid→webpages fields with controlName==null,
+                    // sections 938/1000 are skipped, leaving raw Guid.Empty from valueConvertor.
+                    // ContentItemReferencePopulator reads Guid.Empty and throws ArgumentNullException.
+                    if ((fieldMigration.Actions?.Contains(TcaDirective.ConvertToPages) ?? false) && documentSourceObjectContext != null)
+                    {
+                        var rawVal = target[targetFieldName];
+                        bool isRawEmpty = (rawVal is Guid rg && rg == Guid.Empty)
+                            || (rawVal is string rs && Guid.TryParse(rs, out var rp) && rp == Guid.Empty);
+                        if (isRawEmpty)
+                        {
+                            logger.LogWarning("[Pages] Field '{Field}' (PageType='{PageType}') [Guard/NoControl]: raw Guid.Empty in webpages field (controlName=null) — clearing to null",
+                                targetFieldName, sourceNodeClass.ClassName);
+                            target[targetFieldName] = null;
+                        }
+                    }
                 }
             }
             else if (fmb != null)
