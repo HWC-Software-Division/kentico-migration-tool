@@ -1,3 +1,4 @@
+using System.Data;
 using System.Diagnostics;
 using CMS.ContentEngine;
 using CMS.ContentEngine.Internal;
@@ -65,6 +66,8 @@ public class MigratePagesCommandHandler(
             .ToDictionary(c => c.CultureCode, c => c.CultureGUID, StringComparer.InvariantCultureIgnoreCase);
 
         await MigratePages();
+
+        RepairOrphanedContentItemData();
 
         await ExecDeferredVisualBuilderPatch();
 
@@ -1305,6 +1308,183 @@ public class MigratePagesCommandHandler(
         anythingChanged = false;
         return documentPageBuilderWidgets;
     }
+
+    #endregion
+
+    #region Orphaned content item data repair
+
+    /// <summary>
+    /// After --pages migration, some pages may have ContentItemCommonData rows but no
+    /// corresponding row in the class-specific table (e.g. BAY_News).  This happens when
+    /// ImportAsync succeeds for ContentItemCommonData/ContentItemInfo but fails or is skipped
+    /// for ContentItemDataModel.  XbyK's FormDataBinder.Bind throws ArgumentNullException
+    /// ("container") when it tries to load such a page in the admin UI.
+    ///
+    /// This method scans every content-type table for orphaned CommonData IDs and inserts
+    /// placeholder rows with safe defaults so the admin can open (and correct) those pages.
+    /// </summary>
+    private void RepairOrphanedContentItemData()
+    {
+        logger.LogInformation("==== START: RepairOrphanedContentItemData ====");
+
+        var classTables = GetContentItemClassTables();
+        logger.LogInformation("Checking {Count} content-type tables for orphaned rows", classTables.Count);
+
+        int totalRepaired = 0;
+
+        foreach (var (className, tableName) in classTables)
+        {
+            List<int> orphanedIds;
+            try
+            {
+                orphanedIds = FindOrphanedCommonDataIds(tableName);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Could not check orphans for table [{Table}] — skipped", tableName);
+                continue;
+            }
+
+            if (orphanedIds.Count == 0) continue;
+
+            logger.LogWarning(
+                "Found {Count} orphaned ContentItemCommonData row(s) for class '{Class}' (table [{Table}]) — inserting placeholders",
+                orphanedIds.Count, className, tableName);
+
+            List<ColumnInfo> columns;
+            try
+            {
+                columns = GetNotNullColumns(tableName);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Could not read column metadata for [{Table}] — skipped", tableName);
+                continue;
+            }
+
+            foreach (var commonDataId in orphanedIds)
+            {
+                try
+                {
+                    InsertPlaceholderRow(tableName, commonDataId, columns);
+                    totalRepaired++;
+                    logger.LogInformation(
+                        "Inserted placeholder row in [{Table}] for ContentItemCommonDataID={Id}",
+                        tableName, commonDataId);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex,
+                        "Failed to insert placeholder in [{Table}] for ContentItemCommonDataID={Id}",
+                        tableName, commonDataId);
+                }
+            }
+        }
+
+        logger.LogInformation(
+            "==== END: RepairOrphanedContentItemData (inserted {Total} placeholder row(s)) ====",
+            totalRepaired);
+    }
+
+    /// <summary>Returns (ClassName, TableName) pairs for tables that participate in content-item storage.</summary>
+    private static List<(string ClassName, string TableName)> GetContentItemClassTables()
+    {
+        var result = new List<(string, string)>();
+        // Only include tables that actually have the FK column — avoids false positives
+        const string sql = @"
+            SELECT c.ClassName, c.ClassTableName
+            FROM   CMS_Class c
+            WHERE  c.ClassTableName IS NOT NULL
+              AND  c.ClassTableName <> ''
+              AND  EXISTS (
+                       SELECT 1
+                       FROM   INFORMATION_SCHEMA.COLUMNS ic
+                       WHERE  ic.TABLE_NAME  = c.ClassTableName
+                         AND  ic.COLUMN_NAME = 'ContentItemDataCommonDataID'
+                   )";
+        var ds = ConnectionHelper.ExecuteQuery(sql, null, QueryTypeEnum.SQLQuery);
+        foreach (DataRow row in ds.Tables[0].Rows)
+            result.Add((row["ClassName"].ToString()!, row["ClassTableName"].ToString()!));
+        return result;
+    }
+
+    /// <summary>
+    /// Returns ContentItemCommonDataIDs that belong to this class table but have no
+    /// matching row in the table.
+    /// </summary>
+    private static List<int> FindOrphanedCommonDataIds(string tableName)
+    {
+        // tableName is sourced from CMS_Class.ClassTableName — trusted, not user input
+        var escapedTable = tableName.Replace("'", "''");
+        var sql = $@"
+            SELECT cicd.ContentItemCommonDataID
+            FROM   CMS_ContentItemCommonData cicd
+            INNER  JOIN CMS_ContentItem  ci  ON  ci.ContentItemID  = cicd.ContentItemCommonDataContentItemID
+            INNER  JOIN CMS_Class        cls ON  cls.ClassID        = ci.ContentItemContentTypeID
+                                             AND cls.ClassTableName = N'{escapedTable}'
+            LEFT   JOIN [{tableName}]    t   ON  t.ContentItemDataCommonDataID = cicd.ContentItemCommonDataID
+            WHERE  t.ContentItemDataCommonDataID IS NULL";
+
+        var ds = ConnectionHelper.ExecuteQuery(sql, null, QueryTypeEnum.SQLQuery);
+        return ds.Tables[0].Rows.Cast<DataRow>()
+            .Select(r => Convert.ToInt32(r[0]))
+            .ToList();
+    }
+
+    private record ColumnInfo(string Name, string DataType, bool IsIdentity);
+
+    /// <summary>Returns NOT NULL columns for the table, excluding ContentItemDataCommonDataID and identity columns.</summary>
+    private static List<ColumnInfo> GetNotNullColumns(string tableName)
+    {
+        var escapedTable = tableName.Replace("'", "''");
+        var sql = $@"
+            SELECT
+                c.COLUMN_NAME,
+                c.DATA_TYPE,
+                CAST(COLUMNPROPERTY(OBJECT_ID(c.TABLE_NAME), c.COLUMN_NAME, 'IsIdentity') AS BIT) AS IsIdentity
+            FROM INFORMATION_SCHEMA.COLUMNS c
+            WHERE c.TABLE_NAME   = N'{escapedTable}'
+              AND c.IS_NULLABLE  = 'NO'
+              AND c.COLUMN_NAME <> 'ContentItemDataCommonDataID'";
+
+        var ds = ConnectionHelper.ExecuteQuery(sql, null, QueryTypeEnum.SQLQuery);
+        return ds.Tables[0].Rows.Cast<DataRow>()
+            .Select(r => new ColumnInfo(
+                r["COLUMN_NAME"].ToString()!,
+                r["DATA_TYPE"].ToString()!,
+                r["IsIdentity"] != DBNull.Value && Convert.ToBoolean(r["IsIdentity"])
+            ))
+            .ToList();
+    }
+
+    private static void InsertPlaceholderRow(string tableName, int contentItemDataCommonDataId, List<ColumnInfo> columns)
+    {
+        var writable = columns.Where(c => !c.IsIdentity).ToList();
+
+        var colList = string.Join(", ",
+            writable.Select(c => $"[{c.Name}]").Prepend("[ContentItemDataCommonDataID]"));
+
+        var valList = string.Join(", ",
+            writable.Select(GetDefaultSqlLiteral).Prepend(contentItemDataCommonDataId.ToString()));
+
+        var sql = $"INSERT INTO [{tableName}] ({colList}) VALUES ({valList})";
+        ConnectionHelper.ExecuteQuery(sql, null, QueryTypeEnum.SQLQuery);
+    }
+
+    private static string GetDefaultSqlLiteral(ColumnInfo col) =>
+        col.DataType.ToLowerInvariant() switch
+        {
+            "int" or "bigint" or "smallint" or "tinyint"                          => "0",
+            "bit"                                                                   => "0",
+            "decimal" or "numeric" or "float" or "real" or "money" or "smallmoney" => "0",
+            "datetime" or "datetime2" or "date" or "smalldatetime"                => "GETDATE()",
+            "time"                                                                  => "'00:00:00'",
+            "uniqueidentifier"                                                      => "NEWID()",
+            "nvarchar" or "varchar" or "nchar" or "char"                           => "''",
+            "ntext" or "text"                                                       => "''",
+            "varbinary" or "binary" or "image"                                     => "0x",
+            _                                                                       => "NULL"
+        };
 
     #endregion
 }
