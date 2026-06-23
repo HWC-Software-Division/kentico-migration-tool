@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using CMS.DataEngine;
 using CMS.FormEngine;
 using Microsoft.Extensions.Logging;
@@ -20,8 +21,9 @@ public static class FormDefinitionHelper
                 source.ClassIsDocumentType,
                 isCustomizableSystemClass,
                 classIsCustom,
-                // Custom tables keep their original K13 controlname for reference.
-                preserveSourceControlName: source.ClassIsCustomTable
+                // Custom tables keep their original K13 field definition (settings + dropdown
+                // dependency attributes) verbatim for reference.
+                preserveSourceFieldDefinition: source.ClassIsCustomTable
             );
             patcher.CurrentClassName = source.ClassName;
 
@@ -36,7 +38,7 @@ public static class FormDefinitionHelper
 
             var formInfo = new FormInfo(result);
             ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
-            target.ClassFormDefinition = formInfo.GetXmlDefinition();
+            target.ClassFormDefinition = ReinjectDependencyAttributes(formInfo.GetXmlDefinition(), patcher.GetPendingDependencyAttributes());
         }
         else
         {
@@ -77,6 +79,38 @@ public static class FormDefinitionHelper
         {
             target.ClassFormDefinition = new FormInfo().GetXmlDefinition();
         }
+    }
+
+    /// <summary>
+    /// Re-applies K13 dropdown dependency attributes (hasdependingfields / dependsonanotherfield) to the
+    /// final form definition. The FormInfo round-trip strips field attributes it does not recognise, so for
+    /// custom tables these are restored here, matched by field GUID.
+    /// </summary>
+    private static string ReinjectDependencyAttributes(string formDefinitionXml,
+        IReadOnlyDictionary<string, (string? HasDependingFields, string? DependsOnAnotherField)> dependencyAttributes)
+    {
+        if (dependencyAttributes.Count == 0)
+        {
+            return formDefinitionXml;
+        }
+
+        var doc = XDocument.Parse(formDefinitionXml);
+        foreach (var field in doc.Descendants("field"))
+        {
+            if (field.Attribute("guid")?.Value is { } guid && dependencyAttributes.TryGetValue(guid, out var attrs))
+            {
+                if (attrs.HasDependingFields != null)
+                {
+                    field.SetAttributeValue(FormDefinitionPatcher.FieldAttrHasDependingFields, attrs.HasDependingFields);
+                }
+                if (attrs.DependsOnAnotherField != null)
+                {
+                    field.SetAttributeValue(FormDefinitionPatcher.FieldAttrDependsOnAnotherField, attrs.DependsOnAnotherField);
+                }
+            }
+        }
+
+        return doc.ToString(SaveOptions.DisableFormatting);
     }
 
     private static void ApplyVisibilityConditions(FormInfo formInfo, IReadOnlyDictionary<string, string> conditions)
