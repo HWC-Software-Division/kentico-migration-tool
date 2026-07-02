@@ -85,6 +85,10 @@ public class FormDefinitionPatcher
     // Custom tables only: dropdown dependency attributes (keyed by field GUID) that must be
     // re-applied after the FormInfo round-trip, which strips field attributes it does not recognise.
     private readonly Dictionary<string, (string? HasDependingFields, string? DependsOnAnotherField)> pendingDependencyAttributes = new();
+    // Custom tables only: the K13 `visible` field attribute, keyed by field GUID. PatchField copies
+    // `visible` into `enabled` and then drops `visible`; for custom tables we keep the original value
+    // and re-apply it after the FormInfo round-trip so the migrated definition matches K13.
+    private readonly Dictionary<string, string> pendingVisibleAttributes = new();
     // Integer fields converted to text (due to dropdown/radio control) — visibility conditions
     // that reference these fields must use string comparison instead of integer comparison.
     private readonly HashSet<string> integerToTextConvertedFields = new(StringComparer.OrdinalIgnoreCase);
@@ -217,6 +221,8 @@ public class FormDefinitionPatcher
 
     public IReadOnlyDictionary<string, (string? HasDependingFields, string? DependsOnAnotherField)> GetPendingDependencyAttributes() => pendingDependencyAttributes;
 
+    public IReadOnlyDictionary<string, string> GetPendingVisibleAttributes() => pendingVisibleAttributes;
+
     public void PatchField(XElement field)
     {
         // Custom tables: snapshot the original K13 <settings> block and the dropdown dependency
@@ -225,11 +231,13 @@ public class FormDefinitionPatcher
         XElement? originalSettings = null;
         string? originalHasDependingFields = null;
         string? originalDependsOnAnotherField = null;
+        string? originalVisible = null;
         if (preserveSourceFieldDefinition)
         {
             originalSettings = field.Element(FieldElemSettings) is { } s ? new XElement(s) : null;
             originalHasDependingFields = field.Attribute(FieldAttrHasDependingFields)?.Value;
             originalDependsOnAnotherField = field.Attribute(FieldAttrDependsOnAnotherField)?.Value;
+            originalVisible = field.Attribute(FieldAttrVisible)?.Value;
         }
 
         var columnAttr = field.Attribute(FieldAttrColumn);
@@ -522,6 +530,18 @@ public class FormDefinitionPatcher
                 && guidAttr?.Value is { } fieldGuid)
             {
                 pendingDependencyAttributes[fieldGuid] = (originalHasDependingFields, originalDependsOnAnotherField);
+            }
+
+            // Restore the original K13 `visible` attribute (the block above copies it into `enabled`
+            // and then drops it). Keep it so the migrated custom-table definition matches K13, and
+            // record it by GUID for re-injection after the FormInfo round-trip.
+            if (originalVisible != null)
+            {
+                field.SetAttributeValue(FieldAttrVisible, originalVisible);
+                if (guidAttr?.Value is { } visibleFieldGuid)
+                {
+                    pendingVisibleAttributes[visibleFieldGuid] = originalVisible;
+                }
             }
         }
 

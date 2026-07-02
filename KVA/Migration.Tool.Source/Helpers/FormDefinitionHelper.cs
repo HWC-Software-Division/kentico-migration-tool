@@ -41,7 +41,8 @@ public static class FormDefinitionHelper
             var formInfo = new FormInfo(result);
             ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
             target.ClassFormDefinition = EnsureVisibilityConditionOrdering(
-                ReinjectDependencyAttributes(formInfo.GetXmlDefinition(), patcher.GetPendingDependencyAttributes()),
+                ReinjectDependencyAttributes(formInfo.GetXmlDefinition(),
+                    patcher.GetPendingDependencyAttributes(), patcher.GetPendingVisibleAttributes()),
                 logger, source.ClassName);
         }
         else
@@ -86,14 +87,15 @@ public static class FormDefinitionHelper
     }
 
     /// <summary>
-    /// Re-applies K13 dropdown dependency attributes (hasdependingfields / dependsonanotherfield) to the
-    /// final form definition. The FormInfo round-trip strips field attributes it does not recognise, so for
-    /// custom tables these are restored here, matched by field GUID.
+    /// Re-applies K13 field attributes that the FormInfo round-trip strips: the dropdown dependency
+    /// attributes (hasdependingfields / dependsonanotherfield) and the source `visible` attribute.
+    /// For custom tables these are restored here, matched by field GUID.
     /// </summary>
     private static string ReinjectDependencyAttributes(string formDefinitionXml,
-        IReadOnlyDictionary<string, (string? HasDependingFields, string? DependsOnAnotherField)> dependencyAttributes)
+        IReadOnlyDictionary<string, (string? HasDependingFields, string? DependsOnAnotherField)> dependencyAttributes,
+        IReadOnlyDictionary<string, string> visibleAttributes)
     {
-        if (dependencyAttributes.Count == 0)
+        if (dependencyAttributes.Count == 0 && visibleAttributes.Count == 0)
         {
             return formDefinitionXml;
         }
@@ -101,7 +103,12 @@ public static class FormDefinitionHelper
         var doc = XDocument.Parse(formDefinitionXml);
         foreach (var field in doc.Descendants("field"))
         {
-            if (field.Attribute("guid")?.Value is { } guid && dependencyAttributes.TryGetValue(guid, out var attrs))
+            if (field.Attribute("guid")?.Value is not { } guid)
+            {
+                continue;
+            }
+
+            if (dependencyAttributes.TryGetValue(guid, out var attrs))
             {
                 if (attrs.HasDependingFields != null)
                 {
@@ -111,6 +118,11 @@ public static class FormDefinitionHelper
                 {
                     field.SetAttributeValue(FormDefinitionPatcher.FieldAttrDependsOnAnotherField, attrs.DependsOnAnotherField);
                 }
+            }
+
+            if (visibleAttributes.TryGetValue(guid, out var visibleValue))
+            {
+                field.SetAttributeValue(FormDefinitionPatcher.FieldAttrVisible, visibleValue);
             }
         }
 
