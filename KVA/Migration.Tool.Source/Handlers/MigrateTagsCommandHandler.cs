@@ -163,6 +163,13 @@ public class MigrateTagsCommandHandler(
             t => t.TagGuid
         );
 
+        // TagGroupId → TagGroup code name, used to prefix each tag's code name so tags with
+        // the same reduced code name in different groups stay globally unique in XbyK.
+        var tagGroupCodeNames = kx13Context.CmsTagGroups.ToDictionary(
+            g => g.TagGroupId,
+            g => g.TagGroupName
+        );
+
         foreach (var tag in tags)
         {
             protocol.FetchedSource(tag);
@@ -175,7 +182,8 @@ public class MigrateTagsCommandHandler(
                 continue;
             }
 
-            var mapperSource = new CmsTagMapperSource(taxonomyGuid, tag, tagId2Guid);
+            var tagGroupCodeName = tagGroupCodeNames.TryGetValue(tag.TagGroupId, out var gcn) ? gcn : string.Empty;
+            var mapperSource = new CmsTagMapperSource(taxonomyGuid, tag, tagId2Guid, tagGroupCodeName);
             var umtModels = cmsTagMapper.Map(mapperSource);
 
             foreach (var umtModel in umtModels)

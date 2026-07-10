@@ -12,7 +12,8 @@ namespace Migration.Tool.Source.Mappers;
 public record CmsTagMapperSource(
     Guid TaxonomyGuid,
     CmsTag CmsTag,
-    Dictionary<int, Guid> TagId2Guid
+    Dictionary<int, Guid> TagId2Guid,
+    string TagGroupCodeName
 );
 
 /// <summary>
@@ -23,9 +24,12 @@ public class CmsTagMapper(ILogger<CmsTagMapper> logger) : UmtMapperBase<CmsTagMa
 {
     protected override IEnumerable<IUmtModel> MapInternal(CmsTagMapperSource source)
     {
-        var (taxonomyGuid, cmsTag, tagId2Guid) = source;
+        var (taxonomyGuid, cmsTag, tagId2Guid, tagGroupCodeName) = source;
 
-        var tagName = ToCodeName(cmsTag.TagName);
+        // Prefix the tag code name with the tag group's code name so tags with the same
+        // ASCII-reduced name in different groups do not collide — XbyK requires tag code
+        // names to be globally unique across all taxonomies.
+        var tagName = $"{ToCodeName(tagGroupCodeName)}_{ToCodeName(cmsTag.TagName)}";
 
         var tag = new TagModel
         {
