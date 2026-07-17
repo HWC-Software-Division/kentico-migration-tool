@@ -1,4 +1,5 @@
 ﻿using CMS.ContentEngine;
+using CMS.DataEngine;
 using Kentico.Xperience.UMT.Model;
 using Microsoft.EntityFrameworkCore;
 using Kentico.Xperience.UMT.Services;
@@ -174,6 +175,13 @@ public class MigrateTagsCommandHandler(
         {
             protocol.FetchedSource(tag);
 
+            // tag ไม่มีชื่อ = ข้อมูลขยะจาก K13 — ข้ามไปเลย ไม่ให้ fail เป็น error
+            if (string.IsNullOrWhiteSpace(tag.TagName))
+            {
+                logger.LogWarning("Skip tag ID={ID} (GUID={Guid}) — empty tag name", tag.TagId, tag.TagGuid);
+                continue;
+            }
+
             if (!TagGroupToTaxonomyGuid.TryGetValue(tag.TagGroupId, out var taxonomyGuid))
             {
                 logger.LogWarning(
@@ -189,6 +197,19 @@ public class MigrateTagsCommandHandler(
             foreach (var umtModel in umtModels)
             {
                 var result = await importer.ImportAsync(umtModel);
+
+                // code name ชนกับ tag ตัวอื่นที่ยุบชื่อแล้วเหมือนกัน (เช่น "LGBTQ+" กับ "LGBTQ",
+                // "Tax:" กับ "tax") → retry ด้วย TagGuid ต่อท้าย ซึ่ง unique เสมอและคงที่ทุกรอบ re-migrate
+                if (!result.Success
+                    && result.Exception is CodeNameNotUniqueException
+                    && umtModel is TagModel tagModel)
+                {
+                    tagModel.TagName = $"{tagModel.TagName}_{tag.TagGuid:N}";
+                    logger.LogWarning(
+                        "Tag '{Tag}' code name collision — retrying with code name '{CodeName}'",
+                        tag.TagName, tagModel.TagName);
+                    result = await importer.ImportAsync(tagModel);
+                }
 
                 if (!result.Success)
                 {
