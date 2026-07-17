@@ -29,7 +29,13 @@ public class CmsTagMapper(ILogger<CmsTagMapper> logger) : UmtMapperBase<CmsTagMa
         // Prefix the tag code name with the tag group's code name so tags with the same
         // ASCII-reduced name in different groups do not collide — XbyK requires tag code
         // names to be globally unique across all taxonomies.
-        var tagName = $"{ToCodeName(tagGroupCodeName)}_{ToCodeName(cmsTag.TagName)}";
+        // ชื่อที่มีอักขระ non-ASCII (ไทยล้วน/ไทยปนอังกฤษ) ใช้ TagGuid จาก K13 เป็น code name
+        // แทน hex ที่ถูกตัด 40 ตัว ซึ่งทำให้ tag ที่ขึ้นต้นเหมือนกันชนกัน — TagGuid คงที่
+        // ทุกรอบ re-migrate ส่วนชื่ออ่านออกยังอยู่ที่ TagTitle เช่นเดิม
+        bool hasNonAscii = cmsTag.TagName.Any(c => c > 127);
+        var tagName = hasNonAscii
+            ? $"{ToCodeName(tagGroupCodeName)}_{cmsTag.TagGuid:N}"
+            : $"{ToCodeName(tagGroupCodeName)}_{ToCodeName(cmsTag.TagName)}";
 
         var tag = new TagModel
         {

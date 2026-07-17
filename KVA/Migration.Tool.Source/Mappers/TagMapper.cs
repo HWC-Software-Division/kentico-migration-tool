@@ -13,7 +13,13 @@ public class TagMapper(ILogger<TagMapper> logger) : UmtMapperBase<TagModelSource
     {
         var (taxonomyGuid, category, categoryId2Guid) = source;
 
-        var codeName = ToCodeName(category.CategoryName ?? category.CategoryDisplayName);
+        // ชื่อที่มีอักขระ non-ASCII (ไทยล้วน/ไทยปนอังกฤษ) ใช้ CategoryGUID จาก K13 เป็น code name
+        // แทน hex ที่ถูกตัด 40 ตัว ซึ่งทำให้ category ที่ขึ้นต้นเหมือนกันชนกัน — GUID คงที่ทุกรอบ re-migrate
+        string sourceName = category.CategoryName ?? category.CategoryDisplayName;
+        bool hasNonAscii = sourceName.Any(c => c > 127);
+        var codeName = hasNonAscii
+            ? $"tag_{category.CategoryGUID:N}"
+            : ToCodeName(sourceName);
 
         Guid? parentGuid = null;
         if (category.CategoryParentID.HasValue &&
