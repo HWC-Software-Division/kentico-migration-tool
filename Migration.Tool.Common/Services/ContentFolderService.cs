@@ -130,8 +130,36 @@ public class ContentFolderService(IImporter importer, ILogger<ContentFolderServi
     /// Returns standard attributes of a new folder derived from its display name
     /// </summary>
     public static (Guid Guid, string Name, string DisplayName, string PathSegmentName) StandardFolderTemplate(string siteHash, string folderDisplayName, string absoluteDisplayNamePath, Guid workspaceGuid)
-        => (GuidHelper.CreateFolderGuid($"{workspaceGuid}|{siteHash}|{DisplayNamePathToTreePath(absoluteDisplayNamePath)}"), FolderDisplayNameToName(folderDisplayName), folderDisplayName, FolderDisplayNameToName(folderDisplayName));
+    {
+        var folderGuid = GuidHelper.CreateFolderGuid($"{workspaceGuid}|{siteHash}|{DisplayNamePathToTreePath(absoluteDisplayNamePath)}");
+        string name = FolderDisplayNameToName(folderDisplayName);
+
         // ContentFolderName (code name) ต้อง unique ทั้งระบบ แต่ display name ซ้ำกันได้ทั่ว tree
+        // (เช่น pdf/, en/, th/ ที่มีอยู่ใต้ทุก bulletin) — ถ้าชื่อซ้ำเกิน ~460 โฟลเดอร์
+        // MakeUnique จะหมด suffix pool แล้ว throw "Unable to obtain unique name" ตายทั้ง command
+        // → ต่อท้ายด้วย 8 ตัวแรกของ folderGuid ซึ่ง deterministic ต่อ path (คงที่ทุกรอบ re-migrate)
+        // ให้ unique ตั้งแต่ต้น ส่วนชื่อที่มี non-ASCII (เช่นภาษาไทย) — GetCodeName คงพยัญชนะไทยไว้
+        // ทำให้ไม่ผ่าน validation ของ XbyK → ใช้ folderGuid เต็มเป็น code name แทน
+        // DisplayName ยังเป็นชื่อเดิม (รวมภาษาไทย) ให้ผู้ใช้เห็นในหน้า admin
+        // ContentFolderName จำกัด 50 ตัวอักษร — ต้องตัดชื่อฐานให้เหลือที่ว่างสำหรับ suffix "_xxxxxxxx" (9 ตัว)
+        const int maxCodeNameLength = 50;
+        const int suffixLength = 9; // "_" + 8 hex
+        string guidSuffix = folderGuid.ToString("N")[..8];
+        if (string.IsNullOrWhiteSpace(name) || name.Any(c => c > 127))
+        {
+            name = $"folder_{folderGuid:N}"; // 39 ตัว < 50
+        }
+        else
+        {
+            if (name.Length > maxCodeNameLength - suffixLength)
+            {
+                name = name[..(maxCodeNameLength - suffixLength)];
+            }
+            name = $"{name}_{guidSuffix}";
+        }
+
+        return (folderGuid, name, folderDisplayName, name);
+    }
 
     public delegate void FolderPathSegmentCallback(string segmentDisplayName, string path);
 

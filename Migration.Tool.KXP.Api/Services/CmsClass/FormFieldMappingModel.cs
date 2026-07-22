@@ -110,15 +110,18 @@ public static class FieldMappingInstance
             //new FieldMigration(KsFieldDataType.LongText, FieldDataType.RichTextHTML, FcLongText.HtmlAreaControl, FormComponents.AdminRichTextEditorComponent, [TcaDirective.ConvertToRichText]),
             //new FieldMigration(KsFieldDataType.RichTextHTML, FieldDataType.RichTextHTML, FcLongText.KenticoAdministrationRichTextEditor, FormComponents.AdminRichTextEditorComponent, [TcaDirective.ConvertToRichText]),
             //Fix RichText and LongText
+            // ต้องเป็น LongText (nvarchar(max)) ไม่ใช่ Text (nvarchar มีเพดาน) — เนื้อหา HTML ยาวๆ
+            // (ArticleBody, Detail, SummaryText, ContentDetail) จะโดน "String or binary data would be
+            // truncated" ตอน insert ถ้า column จำกัดขนาด ส่วน control ยังใช้ TextArea ได้ตามเดิม
             new FieldMigration(
                 KsFieldDataType.RichTextHTML,
-                FieldDataType.Text,
+                FieldDataType.LongText,
                 FcLongText.KenticoAdministrationRichTextEditor,
                 FormComponents.AdminTextAreaComponent
             ),
             new FieldMigration(
                 KsFieldDataType.LongText,
-                FieldDataType.Text,
+                FieldDataType.LongText,
                 FcLongText.HtmlAreaControl,
                 FormComponents.AdminTextAreaComponent
             ),
