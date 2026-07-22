@@ -105,17 +105,19 @@ public record MigrateCategoriesCommand : IRequest<CommandResult>, ICommand
 }
 
 /// <summary>
-/// Assigns K13 DocumentTags values (comma-separated tag names) to XbyK content item taxonomy fields.
-/// Must run after --tags and --pages so that both Taxonomies and ContentItems exist.
+/// Assigns K13 DocumentTags values (comma-separated tag names) to the XbyK content item's
+/// DocumentTags text column. Stored as plain text — no Taxonomy/Term involved.
+/// Must run after --pages so that ContentItems exist.
 /// </summary>
 public record MigrateTagValuesCommand : IRequest<CommandResult>, ICommand
 {
     public static readonly int Rank = 1 + MigratePagesCommand.Rank;
 
     public static string Moniker => "tag-values";
-    public static string MonikerFriendly => "Tag Values (DocumentTags → Taxonomy)";
+    public static string MonikerFriendly => "Tag Values (DocumentTags → text)";
 
-    public Type[] Dependencies => [typeof(MigrateSitesCommand), typeof(MigrateTagsCommand), typeof(MigratePagesCommand)];
+    // ไม่ผูกกับ --tags แล้ว เพราะเก็บ tag เป็นข้อความตรงๆ ไม่ใช้ taxonomy
+    public Type[] Dependencies => [typeof(MigrateSitesCommand), typeof(MigratePagesCommand)];
 }
 
 public record MigrateSettingKeysCommand : IRequest<CommandResult>, ICommand
