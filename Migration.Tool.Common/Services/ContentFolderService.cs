@@ -131,6 +131,7 @@ public class ContentFolderService(IImporter importer, ILogger<ContentFolderServi
     /// </summary>
     public static (Guid Guid, string Name, string DisplayName, string PathSegmentName) StandardFolderTemplate(string siteHash, string folderDisplayName, string absoluteDisplayNamePath, Guid workspaceGuid)
         => (GuidHelper.CreateFolderGuid($"{workspaceGuid}|{siteHash}|{DisplayNamePathToTreePath(absoluteDisplayNamePath)}"), FolderDisplayNameToName(folderDisplayName), folderDisplayName, FolderDisplayNameToName(folderDisplayName));
+        // ContentFolderName (code name) ต้อง unique ทั้งระบบ แต่ display name ซ้ำกันได้ทั่ว tree
 
     public delegate void FolderPathSegmentCallback(string segmentDisplayName, string path);
 

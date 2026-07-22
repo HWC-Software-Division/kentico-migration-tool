@@ -17,3 +17,5 @@ mcp_config.json
 /Migration.Tool.CLI/appsettings.json
 /.github/copilot-instructions.md
 /Migration.Tool.CLI/appsettings.json
+/Migration.Tool.CLI/Properties/PublishProfiles/FolderProfile.pubxml
+/Migration.Tool.CLI/Properties/PublishProfiles/FolderProfile.pubxml.user
