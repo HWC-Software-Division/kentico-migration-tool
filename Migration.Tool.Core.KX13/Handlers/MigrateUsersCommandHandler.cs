@@ -26,6 +26,7 @@ public class MigrateUsersCommandHandler(
     : IRequestHandler<MigrateUsersCommand, CommandResult>, IDisposable
 {
     private const string USER_PUBLIC = "public";
+    private const string DEFAULT_EMAIL_DOMAIN = "krungsri.com";
 
     public void Dispose()
     {
@@ -79,6 +80,23 @@ public class MigrateUsersCommandHandler(
         return new GenericCommandResult();
     }
 
+    private static string BuildDefaultEmail(string userName)
+    {
+        // Email is a unique field for users in Kentico, so a single shared default value
+        // would collide when multiple users have no email. Derive a per-user local-part
+        // from the username, keeping only characters valid in an email local-part.
+        var localPart = new string((userName ?? string.Empty)
+            .Where(c => char.IsLetterOrDigit(c) || c is '.' or '_' or '-')
+            .ToArray());
+
+        if (string.IsNullOrEmpty(localPart))
+        {
+            localPart = $"user_{Guid.NewGuid():N}";
+        }
+
+        return $"{localPart}@{DEFAULT_EMAIL_DOMAIN}";
+    }
+
     private Task SaveUserUsingKenticoApi(IModelMappingResult<UserInfo> mapped, KX13M.CmsUser kx13User)
     {
         if (mapped is { Success: true } result)
@@ -90,7 +108,8 @@ public class MigrateUsersCommandHandler(
             {
                 if (string.IsNullOrEmpty(userInfo.Email))
                 {
-                    logger.LogError($"User {userInfo.UserName} does not have an email set. Email is required. You can set it via admin web interface of your source instance or directly in CMS_User database table.");
+                    userInfo.Email = BuildDefaultEmail(userInfo.UserName);
+                    logger.LogWarning($"User {userInfo.UserName} does not have an email set. Using generated email '{userInfo.Email}'. You can update it later via admin web interface or directly in CMS_User database table.");
                 }
                 UserInfoProvider.ProviderObject.Set(userInfo);
 
