@@ -1,5 +1,6 @@
 using System.Diagnostics;
 
+using CMS.DataEngine;
 using CMS.Membership;
 
 using MediatR;
@@ -88,6 +89,34 @@ public class MigrateMembersCommandHandler(
 
                 protocol.Success(kx13User, memberInfo, mapped);
                 logger.LogEntitySetAction(newInstance, memberInfo);
+            }
+            /* MemberEmail must be unique among members with a non-empty value
+               (IX_CMS_Member_MemberEmail is filtered by "IS NOT NULL AND <> ''").
+               Empty value is allowed to repeat and is valid per schema (allowempty="true"),
+               so clear the email and retry instead of losing the member. */
+            catch (InfoObjectException ex) when (ex.Message.Contains(nameof(MemberInfo.MemberEmail), StringComparison.OrdinalIgnoreCase)
+                                                 && !string.IsNullOrEmpty(memberInfo.MemberEmail))
+            {
+                logger.LogWarning("Member {MemberName} email '{Email}' rejected ({Reason}) => migrating with empty email", memberInfo.MemberName, memberInfo.MemberEmail, ex.Message);
+                memberInfo.MemberEmail = string.Empty;
+
+                try
+                {
+                    MemberInfoProvider.ProviderObject.Set(memberInfo);
+
+                    protocol.Success(kx13User, memberInfo, mapped);
+                    logger.LogEntitySetAction(newInstance, memberInfo);
+                }
+                catch (Exception retryEx)
+                {
+                    logger.LogEntitySetError(retryEx, newInstance, memberInfo);
+                    protocol.Append(HandbookReferences
+                        .ErrorCreatingTargetInstance<MemberInfo>(retryEx)
+                        .NeedsManualAction()
+                        .WithIdentityPrint(memberInfo)
+                    );
+                    return;
+                }
             }
             /*Violation in unique index or Violation in unique constraint */
             catch (DbUpdateException dbUpdateException) when (dbUpdateException.InnerException is SqlException { Number: 2601 or 2627 } sqlException)

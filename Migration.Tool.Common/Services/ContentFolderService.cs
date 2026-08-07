@@ -143,19 +143,25 @@ public class ContentFolderService(IImporter importer, ILogger<ContentFolderServi
         // DisplayName ยังเป็นชื่อเดิม (รวมภาษาไทย) ให้ผู้ใช้เห็นในหน้า admin
         // ContentFolderName จำกัด 50 ตัวอักษร — ต้องตัดชื่อฐานให้เหลือที่ว่างสำหรับ suffix "_xxxxxxxx" (9 ตัว)
         const int maxCodeNameLength = 50;
-        const int suffixLength = 9; // "_" + 8 hex
+        const int guidSuffixLength = 9; // "_" + 8 hex
+        // ตอนสร้างจริง EnsureFolderStructure จะห่อชื่อนี้ด้วย UniqueNameHelper.MakeUnique อีกชั้น
+        // ซึ่งเมื่อชื่อซ้ำ (เช่นตอน re-migrate) จะเติม "-XXXX" (1 + SuffixLength) ต่อท้ายเข้าไปอีก
+        // ถ้าชื่อฐานยาวเต็ม 50 อยู่แล้ว suffix นี้จะดันให้ทะลุ 50 → domain validation fail
+        // จึงต้องกันที่ว่างส่วนนี้ไว้ล่วงหน้า
+        int uniqueSuffixReserve = 1 + UniqueNameHelper.SuffixLength; // "-" + 4 = 5
+        int baseMaxLength = maxCodeNameLength - guidSuffixLength - uniqueSuffixReserve; // 36
         string guidSuffix = folderGuid.ToString("N")[..8];
         if (string.IsNullOrWhiteSpace(name) || name.Any(c => c > 127))
         {
-            name = $"folder_{folderGuid:N}"; // 39 ตัว < 50
+            name = $"folder_{folderGuid:N}"; // 39 ตัว (+MakeUnique 5 = 44 < 50)
         }
         else
         {
-            if (name.Length > maxCodeNameLength - suffixLength)
+            if (name.Length > baseMaxLength)
             {
-                name = name[..(maxCodeNameLength - suffixLength)];
+                name = name[..baseMaxLength];
             }
-            name = $"{name}_{guidSuffix}";
+            name = $"{name}_{guidSuffix}"; // <= 45 ตัว (+MakeUnique 5 = 50)
         }
 
         return (folderGuid, name, folderDisplayName, name);
