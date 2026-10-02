@@ -58,8 +58,7 @@ public class AssetMigration(
 
         if (!invokedCommands.Commands.Any(x => x is MigrateMediaLibrariesCommand))
         {
-            logger.LogError($"Trying to migrate asset field value {{FieldName}}, but command {MigrateMediaLibrariesCommand.Moniker} was not invoked", fieldName);
-            return new(false, null);
+            logger.LogWarning($"Trying to migrate asset field value {{FieldName}}, but command {MigrateMediaLibrariesCommand.Moniker} was not invoked", fieldName);
         }
 
         ICmsSite? cmsSite;
@@ -135,6 +134,7 @@ public class AssetMigration(
 
                 if (mediaKind == MediaKind.MediaFile)
                 {
+                    //logger.LogTrace("'{FieldName}' Skipped Match={Value}", fieldName, result);
                     // For /getmedia/{folder}/{filePath} URLs (no GUID), the path is "/{folder}/{filePath}".
                     // Extract the library folder from the first path segment so MediaHelper can do a DB lookup.
                     string? inferredLibraryDir = path?.TrimStart('/').Split('/').FirstOrDefault();
@@ -207,7 +207,7 @@ public class AssetMigration(
                             {
                                 mfis =
                                 [
-                                    new ContentItemReference { Identifier = ownerContentItemGuid }
+                                 new ContentItemReference { Identifier = ownerContentItemGuid }
                                 ];
                                 hasMigratedAsset = true;
                                 logger.LogTrace("MediaFile migrated from media file '{Field}': '{Value}'", fieldName, result);
@@ -246,7 +246,7 @@ public class AssetMigration(
                             {
                                 mfis =
                                 [
-                                    new ContentItemReference { Identifier = contentItemGuid }
+                                new ContentItemReference { Identifier = contentItemGuid }
                                 ];
                                 hasMigratedAsset = true;
                                 logger.LogTrace("Content item migrated from attachment '{Field}': '{Value}' to {ContentItemGUID}", fieldName, mg, contentItemGuid);
@@ -312,12 +312,11 @@ public class AssetMigration(
         {
             if (string.IsNullOrWhiteSpace(sourceUrl))
             {
-                // K13 stored an empty/whitespace URL in a MediaSelectionControl field — nothing to migrate
-                logger.LogWarning("[Pages] Field '{Field}': MediaSelectionControl value is empty/null — skipping legacy media link creation (sourceValue='{Value}')",
-                    fieldName, sourceValue);
-                // hasMigratedAsset stays false → field left null
+                logger.LogInformation("Asset value '{Value}' of {FieldName}' is empty or whitespace. Treating as no value.", sourceValue, fieldName);
+                return new FieldMigrationResult(true, null);
             }
-            else if (!configuration.MigrateMediaToMediaLibrary)
+
+            if (!configuration.MigrateMediaToMediaLibrary)
             {
                 // If we're migrating assets to content hub, unmatched URL can be stored as legacy media link
 
@@ -372,11 +371,12 @@ public class AssetMigration(
                                 if (contentItemGuid != Guid.Empty && ContentItemExists(contentItemGuid))
                                 {
                                     mfis =
-                                    [
-                                        new ContentItemReference { Identifier = contentItemGuid }
-                                    ];
+                                 [
+                                     new ContentItemReference { Identifier = contentItemGuid }
+                                 ];
                                     hasMigratedAsset = true;
                                     logger.LogTrace("Content item migrated from attachment '{Field}': '{Value}' to {ContentItemGUID}", fieldName, attachmentGuid, contentItemGuid);
+                                    break;
                                 }
                                 else
                                 {
@@ -409,9 +409,9 @@ public class AssetMigration(
                                 if (contentItemGuid != Guid.Empty && ContentItemExists(contentItemGuid))
                                 {
                                     mfis =
-                                    [
-                                        new ContentItemReference { Identifier = contentItemGuid }
-                                    ];
+                                [
+                                    new ContentItemReference { Identifier = contentItemGuid }
+                                ];
                                     hasMigratedAsset = true;
                                     logger.LogTrace("Content item migrated from attachment '{Field}': '{Value}' to {ContentItemGUID}", fieldName, attachmentGuid, contentItemGuid);
                                 }
@@ -518,6 +518,7 @@ public class AssetMigration(
 
         const int nameLength = 60;    // number of characters to take from the end of source url as representative name
         string displayName = sourceUrl.Length >= nameLength ? sourceUrl[^nameLength..] : sourceUrl;
+        string name = await contentItemCodeNameProvider.Get(displayName);
 
         logger.LogTrace("[Pages] CreateLegacyMediaLinkUmtModel: sourceUrl='{Url}', displayName='{DisplayName}', itemGuid={Guid}",
             sourceUrl, displayName, itemGuid);
@@ -529,8 +530,6 @@ public class AssetMigration(
                 sourceUrl);
             throw new InvalidOperationException($"CreateLegacyMediaLinkUmtModel: sourceUrl '{sourceUrl}' produced empty displayName");
         }
-
-        string name = await contentItemCodeNameProvider.Get(displayName);
 
         return new ContentItemSimplifiedModel
         {
@@ -567,10 +566,6 @@ public class AssetMigration(
 
     public void MigrateFieldDefinition(FormDefinitionPatcher formDefinitionPatcher, XElement field, XAttribute? columnTypeAttr, string fieldDescriptor)
     {
-        logger.LogInformation("MigrateFieldDefinition - fieldName: '{Value}'", field);
-        logger.LogInformation("MigrateFieldDefinition - columnTypeAttr: '{Value}'", columnTypeAttr);
-        logger.LogInformation("MigrateFieldDefinition - fieldDescriptor: '{Value}'", fieldDescriptor);
-
         columnTypeAttr?.SetValue(configuration.MigrateMediaToMediaLibrary
 #pragma warning disable CS0618 // Type or member is obsolete
             ? FieldDataType.Assets
@@ -586,6 +581,16 @@ public class AssetMigration(
         else
         {
             settings.EnsureElement(FormDefinitionPatcher.SettingsElemControlname, e => e.Value = FormComponents.AdminContentItemSelectorComponent);
+
+            //Guid[] allowedContentTypes = [AssetFacade.LegacyMediaFileContentType.ClassGUID!.Value, AssetFacade.LegacyMediaLinkContentType.ClassGUID!.Value, AssetFacade.LegacyAttachmentContentType.ClassGUID!.Value];
+            //settings.EnsureElement(FormDefinitionPatcher.AllowedContentItemTypeIdentifiers, e => e.Value = JsonConvert.SerializeObject(allowedContentTypes.Select(x => x.ToString()).ToArray()));
+            //var allowEmptyField = field.Attribute(FormDefinitionPatcher.FieldAttrAllowEmpty);
+            //if (allowEmptyField == null || allowEmptyField.Value.Equals("false", StringComparison.InvariantCultureIgnoreCase))
+            //{
+            //    field.SetAttributeValue(FormDefinitionPatcher.FieldAttrAllowEmpty, "true");
+            //    settings.EnsureElement(FormDefinitionPatcher.SettingsMaximumitems, x => x.Value = "1");
+            //    settings.EnsureElement(FormDefinitionPatcher.SettingsMinimumitems, x => x.Value = "1");
+            //}
 
             //KC 20260331- Determine allowed content types based on field name to prevent misconfiguration, for example allowing content item references for image fields that should only allow media files. This is based on the convention of including "image", "thumbnail" or "teaser" in the field name for image fields, and "file", "download" or "attachment" for file fields. If none of these keywords are present, all asset-related content item types will be allowed as a fallback (this is to prevent migration failure in case of unexpected field naming, but still allow correct configuration for most cases). 
             var fieldName = (fieldDescriptor ?? "").ToLower();

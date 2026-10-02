@@ -1,5 +1,4 @@
 using System.Diagnostics;
-
 using CMS.DataEngine;
 using CMS.Membership;
 
@@ -47,7 +46,7 @@ public class MigrateMembersCommandHandler(
             protocol.FetchedSource(kx13User);
             logger.LogTrace("Migrating user {UserName} with UserGuid {UserGuid} to member", kx13User.UserName, kx13User.UserGuid);
 
-            var xbkMemberInfo = MemberInfoProvider.ProviderObject.Get(kx13User.UserGuid);
+            var xbkMemberInfo = MemberInfo.Provider.Get(kx13User.UserGuid);
 
             protocol.FetchedTarget(xbkMemberInfo);
 
@@ -85,11 +84,12 @@ public class MigrateMembersCommandHandler(
 
             try
             {
-                MemberInfoProvider.ProviderObject.Set(memberInfo);
+                MemberInfo.Provider.Set(memberInfo);
 
                 protocol.Success(kx13User, memberInfo, mapped);
                 logger.LogEntitySetAction(newInstance, memberInfo);
             }
+
             /* MemberEmail must be unique among members with a non-empty value
                (IX_CMS_Member_MemberEmail is filtered by "IS NOT NULL AND <> ''").
                Empty value is allowed to repeat and is valid per schema (allowempty="true"),
@@ -118,6 +118,7 @@ public class MigrateMembersCommandHandler(
                     return;
                 }
             }
+
             /*Violation in unique index or Violation in unique constraint */
             catch (DbUpdateException dbUpdateException) when (dbUpdateException.InnerException is SqlException { Number: 2601 or 2627 } sqlException)
             {

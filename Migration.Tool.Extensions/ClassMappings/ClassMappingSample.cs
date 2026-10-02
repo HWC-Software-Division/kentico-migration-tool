@@ -1,12 +1,15 @@
 using CMS.DataEngine;
 using CMS.FormEngine;
 using Kentico.Xperience.UMT.Model;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Migration.Tool.Common.Abstractions;
 using Migration.Tool.Common.Builders;
 using Migration.Tool.Common.Helpers;
 using Migration.Tool.KXP.Api.Auxiliary;
+using Migration.Tool.Source;
+using Migration.Tool.Source.Model;
 
 // ReSharper disable ArrangeMethodOrOperatorBody
 
@@ -44,6 +47,39 @@ public static class ClassMappingSample
             .SetFrom(sourceClassName, "CoffeeFarm", true)
             .WithFieldPatch(f => f.SetPropertyValue(FormFieldPropertyEnum.FieldCaption, "Farm RM Clone"));
 
+        // SKU field sample
+        m
+            .BuildField("CoffeeSkuNumber")
+            .ConvertFrom(sourceClassName, "CoffeeAltitude", true, (v, context) =>
+            {
+                int? skuId = (context as ConvertorTreeNodeContext)?.NodeSKUID;
+
+                if (skuId is null or <= 0)
+                {
+                    return null;
+                }
+
+                var modelFacade = KsCoreDiExtensions.ServiceProvider.GetRequiredService<ModelFacade>();
+
+                // Consider caching a method that queries all SKUs at once, then filter with linq to avoid querying the database for each page
+                var kx13Sku = modelFacade.Select<IComSku>(
+                    $"SKUID = @skuId",
+                    "SKUNumber",
+                    new SqlParameter("skuId", skuId.Value)
+                ).FirstOrDefault();
+                // Alternately, you can work with SKU variants if you filter by SKUParentSKUID instead of SKUID
+
+                return kx13Sku?.SKUNumber;
+            })
+            .WithFieldPatch(f =>
+            {
+                f.Name = "CoffeeSkuNumber";
+                f.Caption = "SKU number";
+                f.DataType = FieldDataType.Text;
+                f.AllowEmpty = true;
+                f.SetComponentName(FormComponents.AdminTextInputComponent);
+            });
+
         m
             .BuildField("CoffeeCountryRM")
             .WithFieldPatch(f => f.Caption = "Country RM")
@@ -69,6 +105,32 @@ public static class ClassMappingSample
             .SetFrom(sourceClassName, "CoffeeIsDecaf", true)
             .WithFieldPatch(f => f.SetPropertyValue(FormFieldPropertyEnum.FieldCaption, "IsDecaf RM"));
 
+        // Example of adding a new field that doesn't exist in the source class
+        m
+            .BuildField("CoffeeRating")
+            .WithoutSource("integer")
+            .WithFieldPatch(f =>
+            {
+                f.Caption = "Coffee Rating";
+                f.AllowEmpty = true;
+                f.DataType = FieldDataType.Integer;
+                f.DefaultValue = "0";
+            });
+
+        // Example of adding a new taxonomy field
+        m
+            .BuildField("CoffeeCategories")
+            .WithoutSource("taxonomy")
+            .WithFieldPatch(f =>
+            {
+                f.Caption = "Coffee Categories";
+                f.AllowEmpty = true;
+                f.DataType = "taxonomy";
+                f.Settings["controlname"] = "Kentico.Administration.TagSelector";
+                // example of setting taxonomy group by its GUID
+                f.Settings["TaxonomyGroup"] = "[\"1C9D79E0-482E-468C-9C2A-6CBB53BE53F7\"]";
+            });
+
         // register class mapping
         serviceCollection.AddSingleton<IClassMapping>(m);
 
@@ -86,6 +148,12 @@ public static class ClassMappingSample
             target.ClassDisplayName = "Coffee remodeled";
             target.ClassType = ClassType.CONTENT_TYPE;
             target.ClassContentTypeType = ClassContentTypeType.WEBSITE;
+            // For page (WEBSITE) content types, set to true to preserve URLs and routing ("Include in routing")
+            // Custom mappings do not inherit this automatically; if omitted, it defaults to false and routing is disabled
+            target.ClassWebPageHasUrl = true;
+            // Reuse the same class GUID as the original class to preserve existing
+            // references to the class (allowed childs / parents)
+            target.ClassGUID = new Guid("d397e339-60b1-4a44-8065-faa8915b75ed");
         });
 
         // set new primary key
@@ -143,6 +211,9 @@ public static class ClassMappingSample
             target.ClassDisplayName = "ET - MY new transformed event";
             target.ClassType = ClassType.CONTENT_TYPE;
             target.ClassContentTypeType = ClassContentTypeType.WEBSITE;
+            // For page (WEBSITE) content types, set to `true` to preserve URLs and routing ("Include in routing")
+            // Custom mappings do not inherit this automatically; if omitted, it defaults to false and routing is disabled
+            target.ClassWebPageHasUrl = true;
         });
 
         // register custom table handler once for all custom table mappings
@@ -156,7 +227,7 @@ public static class ClassMappingSample
         title.SetFrom(sourceClassName1, "EventTitle", true);
         // map "EventTitle" field form source data class "_ET.Event2"
         title.SetFrom(sourceClassName2, "EventTitle");
-        // patch field definition, in this case lets change field caption 
+        // patch field definition, in this case let's change field caption
         title.WithFieldPatch(f => f.Caption = "Event title");
 
 
@@ -182,7 +253,7 @@ public static class ClassMappingSample
             {
                 case ConvertorTreeNodeContext treeNodeContext:
                     // here you can use available treenode context
-                    // (var nodeGuid, int nodeSiteId, int? documentId, bool migratingFromVersionHistory) = treeNodeContext;
+                    // (var nodeGuid, int nodeSiteId, int? nodeSKUID, int? documentId, bool migratingFromVersionHistory) = treeNodeContext;
                     break;
                 default:
                     // no context is available (in future, mapping feature could be extended and therefore different context will be supplied or no context at all)
@@ -277,7 +348,7 @@ public static class ClassMappingSample
             {
                 case ConvertorTreeNodeContext treeNodeContext:
                     // here you can use available treenode context
-                    // (var nodeGuid, int nodeSiteId, int? documentId, bool migratingFromVersionHistory) = treeNodeContext;
+                    // (var nodeGuid, int nodeSiteId, int? nodeSKUID, int? documentId, bool migratingFromVersionHistory) = treeNodeContext;
                     break;
                 case ConvertorCustomTableContext customTableContext:
                 {
@@ -398,6 +469,7 @@ public static class ClassMappingSample
     public static IServiceCollection AddReusableSchemaIntegrationSample(this IServiceCollection serviceCollection)
     {
         const string schemaNameDgcCommon = "DGC.Address";
+        const string schemaNameDgcContact = "DGC.Contact";
         const string schemaNameDgcName = "DGC.Name";
         const string sourceClassName = "DancingGoatCore.Cafe";
 
@@ -460,6 +532,19 @@ public static class ClassMappingSample
                 }
             });
 
+
+        // Sample: multiple reusable schemas sharing the same source field.
+        // When two schemas map a field from the same source, use WithFieldPatch on at least one of the fields to change the target GUID to avoid GUID collision.
+        var sb3 = new ReusableSchemaBuilder(schemaNameDgcContact, "Contact information", "Reusable schema that defines contact information");
+        sb3
+            .BuildField("CafePhone2")
+            .CreateFrom(sourceClassName, "CafePhone")
+            .WithFieldPatch(f =>
+            {
+                f.Caption = "Contact Phone 2";
+                f.Guid = new Guid("C9D7B0A1-3F4E-4D2A-BB5F-8C6D7E5F9A1B");
+            });
+
         var m = new MultiClassMapping("DancingGoatCore.CafeRS", target =>
         {
             target.ClassName = "DancingGoatCore.CafeRS";
@@ -467,19 +552,25 @@ public static class ClassMappingSample
             target.ClassDisplayName = "Coffee with reusable schema";
             target.ClassType = ClassType.CONTENT_TYPE;
             target.ClassContentTypeType = ClassContentTypeType.WEBSITE;
+            target.ClassWebPageHasUrl = true;
+            // Reuse the same class GUID as the original class to preserve existing
+            // references to the class (allowed childs / parents)
+            target.ClassGUID = new Guid("0ec6ed98-92b1-44dd-a93b-fa4be217a252");
         });
 
         // set primary key
         m.BuildField("CafeID").AsPrimaryKey();
 
         // declare that we intend to use reusable schema and set mappings to new fields from old ones
-        m.UseResusableSchema(schemaNameDgcCommon);
+        m.UseReusableSchema(schemaNameDgcCommon);
+        m.UseReusableSchema(schemaNameDgcContact);
         m.BuildField("City").SetFrom(sourceClassName, "CafeCity");
         m.BuildField("Street").SetFrom(sourceClassName, "CafeStreet");
         m.BuildField("ZipCode").SetFrom(sourceClassName, "CafeZipCode");
         m.BuildField("Phone").SetFrom(sourceClassName, "CafePhone");
+        m.BuildField("ContactPhone").SetFrom(sourceClassName, "CafePhone");
 
-        m.UseResusableSchema(schemaNameDgcName);
+        m.UseReusableSchema(schemaNameDgcName);
         m.BuildField("Name").SetFrom(sourceClassName, "CafeName");
 
         // old fields we leave in data class
@@ -489,7 +580,7 @@ public static class ClassMappingSample
         // in similar manner we can define other classes where we want to use reusable schema
         // var m2 = new MultiClassMapping("DancingGoatCore.MyOtherClass", target =>
         // ...
-        // m2.UseResusableSchema(schemaNameDgcCommon);
+        // m2.UseReusableSchema(schemaNameDgcCommon);
         // m2.BuildField ...
         // serviceCollection.AddSingleton<IClassMapping>(m2);
 
@@ -498,6 +589,7 @@ public static class ClassMappingSample
         // register reusable schema builder
         serviceCollection.AddSingleton<IReusableSchemaBuilder>(sb);
         serviceCollection.AddSingleton<IReusableSchemaBuilder>(sb2);
+        serviceCollection.AddSingleton<IReusableSchemaBuilder>(sb3);
 
         return serviceCollection;
     }
@@ -523,15 +615,20 @@ public static class ClassMappingSample
             target.ClassDisplayName = "Article with reusable schema";
             target.ClassType = ClassType.CONTENT_TYPE;
             target.ClassContentTypeType = ClassContentTypeType.WEBSITE;
+            target.ClassWebPageHasUrl = true;
+            // Reuse the same class GUID as the original class to preserve existing
+            // references to the class (allowed childs / parents)
+            target.ClassGUID = new Guid("f10195ae-16f3-46a2-bcda-1b0e86ed9df7");
         });
 
         // set primary key
         m.BuildField("ArticleID").AsPrimaryKey();
 
         // declare that we intend to use reusable schema and set mappings to new fields from old ones
-        m.UseResusableSchema("DancingGoatCore.ArticleBase");
-        m.BuildField("ArticleTitle").SetFrom("DancingGoatCore.Article", "ArticleTitle", true);
-        m.BuildField("ArticleTeaser").SetFrom("DancingGoatCore.Article", "ArticleTeaser", true);
+        m.UseReusableSchema("DancingGoatCore.ArticleBase");
+        // we have to use new field names to avoid name collisions with fields from reusable field schema
+        m.BuildField("Title").SetFrom("DancingGoatCore.Article", "ArticleTitle", true).WithFieldPatch(f => f.Caption = "Article Title");
+        m.BuildField("Teaser").SetFrom("DancingGoatCore.Article", "ArticleTeaser", true).WithFieldPatch(f => f.Caption = "Article Teaser");
 
         // register mapping
         serviceCollection.AddSingleton<IClassMapping>(m);
@@ -564,7 +661,7 @@ public static class ClassMappingSample
         //      If you're unsure what the target field type should be, let MT migrate page types (--page-types CLI command)
         //      into a disposable clone of your target instance and see the produced field types.
 
-        var m = new MultiClassMapping("DancingGoatCore.PrefabArticle");
+        var m = new MultiClassMapping("DancingGoatCore.PrefabArticle", _ => { });
         const string sourceClassName = "DancingGoatCore.Article";
 
         // Field mapping
@@ -586,9 +683,34 @@ public static class ClassMappingSample
             .SetFrom(sourceClassName, "ArticleRelatedArticles");
 
         // Reusable field schema field mapping
-        m.UseResusableSchema("PrefabBase");
+        m.UseReusableSchema("PrefabBase");
         m.BuildField("PrefabBaseTitle")
             .SetFrom(sourceClassName, "ArticleTitle");
+
+        serviceCollection.AddSingleton<IClassMapping>(m);
+        return serviceCollection;
+    }
+
+    public static IServiceCollection AddCustomContactFieldMappingSample(this IServiceCollection serviceCollection)
+    {
+        const string targetClassName = "OM.Contact";
+        const string sourceClassName = "OM.Contact";
+
+        // Create a custom mapping for the built-in OM.Contact system table.
+        // This adds custom contact fields that are not covered by the default
+        // Kentico Migration Tool mapping. See Migration.Tool.Source.Model.IOmContact
+        // for fields supported out of the box.
+        var m = new MultiClassMapping(targetClassName, target =>
+        {
+            target.ClassName = targetClassName;
+            target.ClassTableName = "OM_Contact";
+            target.ClassType = ClassType.SYSTEM_TABLE;
+        });
+
+        // Map the custom contact field from the source table to the target contact table.
+        m
+            .BuildField("CustomContactField")
+            .SetFrom(sourceClassName, "CustomContactField", true);
 
         serviceCollection.AddSingleton<IClassMapping>(m);
         return serviceCollection;

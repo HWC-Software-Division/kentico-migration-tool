@@ -87,7 +87,7 @@ public class MigratePagesCommandHandler(
             // Walk all pages in source instance. Gather their redirections & mapping from their original URLs to webpage entities in target instance
             foreach (var ksSite in sites)
             {
-                var channelInfo = ChannelInfoProvider.ProviderObject.Get(ksSite.SiteGUID);
+                var channelInfo = ChannelInfo.Provider.Get(ksSite.SiteGUID);
 
                 var ksTrees = modelFacade.Select<ICmsTree>(
                     "NodeSiteId = @siteId",
@@ -201,7 +201,7 @@ public class MigratePagesCommandHandler(
         var sites = modelFacade.GetMigratedSites();
         foreach (var ksSite in sites)
         {
-            var channelInfo = ChannelInfoProvider.ProviderObject.Get(ksSite.SiteGUID);
+            var channelInfo = ChannelInfo.Provider.Get(ksSite.SiteGUID);
             if (channelInfo == null)
             {
                 logger.LogError("Target channel for site '{SiteName}' not exists!", ksSite.SiteName);
@@ -431,13 +431,11 @@ public class MigratePagesCommandHandler(
                             }
                         }
 
-                        var targetClassInfo = contentItemDirective!.TargetClassInfo;
-
                         if (contentItemDirective is not DropDirective)
                         {
                             AssertVersionStatusRule(commonDataInfos);
 
-                            if (webPageItemInfo != null && targetClassInfo is { ClassWebPageHasUrl: true })
+                            if (contentItemDirective != null && webPageItemInfo != null && contentItemDirective.TargetClassInfo is { ClassWebPageHasUrl: true })
                             {
                                 await GenerateDefaultPageUrlPath(ksNode, webPageItemInfo);
                                 if (!contentItemDirective!.RegenerateUrlPath)
@@ -580,7 +578,7 @@ public class MigratePagesCommandHandler(
         if (ContentItemFromNode(ksNode)?.ContentItemID is { } contentItemId)
         {
             if (cultureCodeToLanguageGuid!.TryGetValue(linkedDocument.DocumentCulture, out var languageGuid) &&
-                ContentLanguageInfoProvider.ProviderObject.Get(languageGuid) is { } languageInfo)
+                ContentLanguageInfo.Provider.Get(languageGuid) is { } languageInfo)
             {
                 if (ContentItemCommonDataInfo.Provider.Get()
                         .WhereEquals(nameof(ContentItemCommonDataInfo.ContentItemCommonDataContentItemID), contentItemId)
@@ -680,13 +678,14 @@ public class MigratePagesCommandHandler(
 
                 foreach (var childCollection in parentItem.ChildLinks.GroupBy(x => x.fieldName))
                 {
+                    //var guidArray = childCollection.Select(x => new { Identifier = mappedSiteNodes[x.node.NodeGUID].ContentItemGuid }).ToArray();
                     var guidArray = childCollection
-                        .Select(x => mappedSiteNodes.TryGetValue(x.node.NodeGUID, out var mappedNode)
-                            ? (fieldName: x.fieldName, nodeGuid: x.node.NodeGUID, contentItemGuid: mappedNode.ContentItemGuid)
-                            : (fieldName: x.fieldName, nodeGuid: x.node.NodeGUID, contentItemGuid: Guid.Empty))
-                        .Where(x => CanUseContentItemReference(x.contentItemGuid, x.fieldName, parentMappedNode.TargetClassInfo.ClassName, x.nodeGuid))
-                        .Select(x => new { Identifier = x.contentItemGuid })
-                        .ToArray();
+                       .Select(x => mappedSiteNodes.TryGetValue(x.node.NodeGUID, out var mappedNode)
+                           ? (fieldName: x.fieldName, nodeGuid: x.node.NodeGUID, contentItemGuid: mappedNode.ContentItemGuid)
+                           : (fieldName: x.fieldName, nodeGuid: x.node.NodeGUID, contentItemGuid: Guid.Empty))
+                       .Where(x => CanUseContentItemReference(x.contentItemGuid, x.fieldName, parentMappedNode.TargetClassInfo.ClassName, x.nodeGuid))
+                       .Select(x => new { Identifier = x.contentItemGuid })
+                       .ToArray();
 
                     string serializedValue = JsonConvert.SerializeObject(guidArray);
                     dataModel.CustomProperties[childCollection.Key] = serializedValue;
@@ -824,8 +823,8 @@ public class MigratePagesCommandHandler(
     private async Task MigratePageUrlPaths(Guid webSiteChannelGuid, Guid languageGuid,
         List<ContentItemCommonDataInfo> contentItemCommonDataInfos, ICmsDocument? ksDocument, ICmsTree ksTree, string documentCulture, bool wasLinkedNode, WebPageItemInfo webPageItemInfo)
     {
-        var languageInfo = ContentLanguageInfoProvider.ProviderObject.Get(languageGuid);
-        var webSiteChannel = WebsiteChannelInfoProvider.ProviderObject.Get(webSiteChannelGuid);
+        var languageInfo = ContentLanguageInfo.Provider.Get(languageGuid);
+        var webSiteChannel = WebsiteChannelInfo.Provider.Get(webSiteChannelGuid);
 
         #region Migration of custom routing model
 
@@ -1011,8 +1010,8 @@ public class MigratePagesCommandHandler(
             return;
         }
 
-        var languageInfo = ContentLanguageInfoProvider.ProviderObject.Get(languageGuid);
-        var webSiteChannel = WebsiteChannelInfoProvider.ProviderObject.Get(ksSite.SiteGUID);
+        var languageInfo = ContentLanguageInfo.Provider.Get(languageGuid);
+        var webSiteChannel = WebsiteChannelInfo.Provider.Get(ksSite.SiteGUID);
 
         var ksUrls = modelFacade.SelectWhere<ICmsAlternativeUrl>("AlternativeUrlDocumentID = @documentId AND AlternativeUrlSiteID = @siteId",
             new SqlParameter("documentId", ksDocument.DocumentID), new SqlParameter("siteId", ksSite.SiteID)).ToArray();
@@ -1218,7 +1217,7 @@ public class MigratePagesCommandHandler(
         var result = contentLanguageInfos.SingleOrDefault(x => x.ContentLanguageCultureFormat.Equals(cultureFormat, StringComparison.InvariantCultureIgnoreCase));
         if (result is null)
         {
-            result = ContentLanguageInfoProvider.ProviderObject.Get().WhereEquals(nameof(ContentLanguageInfo.ContentLanguageCultureFormat), cultureFormat).SingleOrDefault()
+            result = ContentLanguageInfo.Provider.Get().WhereEquals(nameof(ContentLanguageInfo.ContentLanguageCultureFormat), cultureFormat).SingleOrDefault()
                 ?? throw new InvalidOperationException($"Missing content language with culture format '{cultureFormat}'");
             contentLanguageInfos.Add(result);
         }
@@ -1230,7 +1229,7 @@ public class MigratePagesCommandHandler(
         var result = contentLanguageInfos.SingleOrDefault(x => x.ContentLanguageName.Equals(languageName, StringComparison.InvariantCultureIgnoreCase));
         if (result is null)
         {
-            result = ContentLanguageInfoProvider.ProviderObject.Get().WhereEquals(nameof(ContentLanguageInfo.ContentLanguageName), languageName).SingleOrDefault()
+            result = ContentLanguageInfo.Provider.Get().WhereEquals(nameof(ContentLanguageInfo.ContentLanguageName), languageName).SingleOrDefault()
                 ?? throw new InvalidOperationException($"Missing content language with name '{languageName}'");
             contentLanguageInfos.Add(result);
         }
@@ -1345,7 +1344,8 @@ public class MigratePagesCommandHandler(
                 continue;
             }
 
-            if (orphanedIds.Count == 0) continue;
+            if (orphanedIds.Count == 0)
+                continue;
 
             logger.LogWarning(
                 "Found {Count} orphaned ContentItemCommonData row(s) for class '{Class}' (table [{Table}]) — inserting placeholders",
@@ -1474,16 +1474,16 @@ public class MigratePagesCommandHandler(
     private static string GetDefaultSqlLiteral(ColumnInfo col) =>
         col.DataType.ToLowerInvariant() switch
         {
-            "int" or "bigint" or "smallint" or "tinyint"                          => "0",
-            "bit"                                                                   => "0",
+            "int" or "bigint" or "smallint" or "tinyint" => "0",
+            "bit" => "0",
             "decimal" or "numeric" or "float" or "real" or "money" or "smallmoney" => "0",
-            "datetime" or "datetime2" or "date" or "smalldatetime"                => "GETDATE()",
-            "time"                                                                  => "'00:00:00'",
-            "uniqueidentifier"                                                      => "NEWID()",
-            "nvarchar" or "varchar" or "nchar" or "char"                           => "''",
-            "ntext" or "text"                                                       => "''",
-            "varbinary" or "binary" or "image"                                     => "0x",
-            _                                                                       => "NULL"
+            "datetime" or "datetime2" or "date" or "smalldatetime" => "GETDATE()",
+            "time" => "'00:00:00'",
+            "uniqueidentifier" => "NEWID()",
+            "nvarchar" or "varchar" or "nchar" or "char" => "''",
+            "ntext" or "text" => "''",
+            "varbinary" or "binary" or "image" => "0x",
+            _ => "NULL"
         };
 
     #endregion

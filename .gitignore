@@ -14,8 +14,5 @@ Migration.Tool.CLI/appsettings.local.json_
 mcp.json
 claude_desktop_config.json
 mcp_config.json
-/Migration.Tool.CLI/appsettings.json
-/.github/copilot-instructions.md
-/Migration.Tool.CLI/appsettings.json
-/Migration.Tool.CLI/Properties/PublishProfiles/FolderProfile.pubxml
-/Migration.Tool.CLI/Properties/PublishProfiles/FolderProfile.pubxml.user
+/Migration.Tool.CLI/Properties/PublishProfiles
+/Migration.Tool.CLI/Migration.Tool.CLI.csproj.user

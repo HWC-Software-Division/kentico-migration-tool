@@ -1,5 +1,7 @@
 using Kentico.Xperience.UMT.Model;
+
 using Microsoft.Extensions.Logging;
+
 using Migration.Tool.Common.Abstractions;
 using Migration.Tool.Source.Model;
 
@@ -11,39 +13,52 @@ public class TagMapper(ILogger<TagMapper> logger) : UmtMapperBase<TagModelSource
 {
     protected override IEnumerable<IUmtModel> MapInternal(TagModelSource source)
     {
-        var (taxonomyGuid, category, categoryId2Guid) = source;
+        var (taxonomyGuid, cmsCategory, id2Guid) = source;
 
         // ชื่อที่มีอักขระ non-ASCII (ไทยล้วน/ไทยปนอังกฤษ) ใช้ CategoryGUID จาก K13 เป็น code name
         // แทน hex ที่ถูกตัด 40 ตัว ซึ่งทำให้ category ที่ขึ้นต้นเหมือนกันชนกัน — GUID คงที่ทุกรอบ re-migrate
-        string sourceName = category.CategoryName ?? category.CategoryDisplayName;
+        string sourceName = cmsCategory.CategoryName ?? cmsCategory.CategoryDisplayName;
         bool hasNonAscii = sourceName.Any(c => c > 127);
         var codeName = hasNonAscii
-            ? $"tag_{category.CategoryGUID:N}"
+            ? $"tag_{cmsCategory.CategoryGUID:N}"
             : ToCodeName(sourceName);
 
         Guid? parentGuid = null;
-        if (category.CategoryParentID.HasValue &&
-            categoryId2Guid.TryGetValue(category.CategoryParentID.Value, out var parentGuidValue))
+        if (cmsCategory.CategoryParentID.HasValue &&
+            id2Guid.TryGetValue(cmsCategory.CategoryParentID.Value, out var parentGuidValue))
         {
             parentGuid = parentGuidValue;
         }
 
         var tag = new TagModel
         {
-            TagGUID = category.CategoryGUID,
-            TagName = codeName,
-            TagTitle = category.CategoryDisplayName,
-            TagDescription = category.CategoryDescription,
+            TagName = cmsCategory.CategoryName,
+            TagTitle = cmsCategory.CategoryDisplayName,
+            TagDescription = cmsCategory.CategoryDescription,
+            TagGUID = cmsCategory.CategoryGUID,
             TagTaxonomyGUID = taxonomyGuid,
-            TagOrder = category.CategoryOrder ?? 0,
+            TagOrder = cmsCategory.CategoryOrder ?? 0,
             TagParentGUID = parentGuid,
             TagTranslations = []
         };
 
         logger.LogTrace(
             "Mapped CmsCategory: ID={CategoryId} '{DisplayName}' → CodeName='{CodeName}' Taxonomy={TaxGuid}",
-            category.CategoryID, category.CategoryDisplayName, codeName, taxonomyGuid
+            cmsCategory.CategoryID, cmsCategory.CategoryDisplayName, codeName, taxonomyGuid
         );
+
+
+        if (cmsCategory.CategoryParentID is { } categoryParentId)
+        {
+            if (id2Guid.TryGetValue(categoryParentId, out var categoryGuid))
+            {
+                tag.TagParentGUID = categoryGuid;
+            }
+            else
+            {
+                logger.LogWarning("Missing parent category {CategoryParentID} in source instance", categoryParentId);
+            }
+        }
 
         yield return tag;
     }

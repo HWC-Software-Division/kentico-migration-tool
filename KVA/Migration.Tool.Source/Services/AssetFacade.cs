@@ -147,7 +147,8 @@ public class AssetFacade(
                 {
                     ContentItemGuid = translatedMediaGuid,
                     Identifier = GuidHelper.CreateAssetGuid(translatedMediaGuid, contentLanguageName),
-                    Name = Path.GetFileNameWithoutExtension(mediaFile.FileName) + mediaFile.FileExtension,
+                    Name =
+                        Path.GetFileNameWithoutExtension(mediaFile.FileName) + mediaFile.FileExtension,
                     Extension = mediaFile.FileExtension,
                     Size = null,
                     LastModified = null,
@@ -499,7 +500,7 @@ public class AssetFacade(
                 !string.IsNullOrWhiteSpace(toolConfiguration.KxCmsDirPath))
         {
             var pathParts = new List<string>();
-            if (cmsMediaLibrariesFolder != null)
+            if (!string.IsNullOrEmpty(cmsMediaLibrariesFolder))
             {
                 if (Path.IsPathRooted(cmsMediaLibrariesFolder))
                 {

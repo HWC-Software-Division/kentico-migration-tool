@@ -79,6 +79,7 @@ public class CommandParser : ICommandParser
             if (arg == $"--{MigratePagesCommand.Moniker}")
             {
                 subcommands.Add(new MigratePagesCommand());
+                subcommands.Add(new MigrateAttachmentsCommand());
                 continue;
             }
 
@@ -154,6 +155,19 @@ public class CommandParser : ICommandParser
                 continue;
             }
 
+            if (arg == $"--{MigrateCustomersCommand.Moniker}")
+            {
+                subcommands.Add(new MigrateCustomersCommand());
+                continue;
+            }
+
+            if (arg == $"--{MigrateOrdersCommand.Moniker}")
+            {
+                subcommands.Add(new MigrateOrdersCommand());
+                continue;
+            }
+
+
             throw new InvalidOperationException($"Unknown command '{arg}'");
         }
 
@@ -179,6 +193,8 @@ public class CommandParser : ICommandParser
         WriteCommandDesc($"starts migration of {Green(MigrateMembersCommand.MonikerFriendly)}", $"migrate --{MigrateMembersCommand.Moniker}");
         WriteCommandDesc($"starts migration of {Green(MigrateAttachmentsCommand.MonikerFriendly)}", $"migrate --{MigrateAttachmentsCommand.Moniker}");
         WriteCommandDesc($"starts migration of {Green(MigrateCustomModulesCommand.MonikerFriendly)}", $"migrate --{MigrateCustomModulesCommand.Moniker}");
+        WriteCommandDesc($"starts migration of {Green(MigrateCustomersCommand.MonikerFriendly)}", $"migrate --{MigrateCustomersCommand.Moniker}");
+        WriteCommandDesc($"starts migration of {Green(MigrateOrdersCommand.MonikerFriendly)}", $"migrate --{MigrateOrdersCommand.Moniker}");
         WriteCommandDesc($"starts migration of {Green(MigrateCustomersCommand.MonikerFriendly)}", $"migrate --{MigrateCustomersCommand.Moniker}");
         WriteCommandDesc($"starts migration of {Green(MigrateOrdersCommand.MonikerFriendly)}", $"migrate --{MigrateOrdersCommand.Moniker}");
         Console.WriteLine();

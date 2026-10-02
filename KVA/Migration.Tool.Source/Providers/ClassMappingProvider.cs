@@ -120,11 +120,9 @@ public class ClassMappingProvider(
 
             newDt.ClassFormDefinition = nfi.GetXmlDefinition();
 
-            var reusableSchemas = new Dictionary<Guid, string>();
             foreach (string schemaName in classMapping.ReusableSchemaNames)
             {
-                Guid schemaGuid = reusableSchemaService.AddReusableSchemaToDataClass(newDt, schemaName);
-                reusableSchemas[schemaGuid] = schemaName;
+                reusableSchemaService.AddReusableSchemaToDataClass(newDt, schemaName);
             }
 
             nfi = new FormInfo(newDt.ClassFormDefinition);
@@ -172,7 +170,7 @@ public class ClassMappingProvider(
 
             var includedMetadata = cmsClasses.Any(x => x.ClassResourceID.HasValue) ? IncludedMetadata.None : (configuration.IncludeExtendedMetadata.GetValueOrDefault(false) ? IncludedMetadata.Extended : IncludedMetadata.Basic);
             FormDefinitionHelper.MapFormDefinitionFields(logger, fieldMigrationService, nfi.GetXmlDefinition(), false, true, newDt, false, false, new FormInfo(newDt.ClassFormDefinition).GetFormElements(true, true).Select(x => GetFormElementName(x)));
-            PatchDataClassInfo(newDt, [], modelFacade.SelectVersion(), reusableSchemas, includedMetadata, out _, out _);
+            PatchDataClassInfo(newDt, [], modelFacade.SelectVersion(), includedMetadata, out _, out _);
 
             if (classMapping.TargetFieldPatchers.Count > 0)
             {
@@ -203,10 +201,10 @@ public class ClassMappingProvider(
                 {
                     if (modelFacade.SelectById<ICmsSite>(cmsClassSite.SiteID) is { SiteGUID: var siteGuid })
                     {
-                        if (ChannelInfoProvider.ProviderObject.Get(siteGuid) is { ChannelID: var channelId })
+                        if (ChannelInfo.Provider.Get(siteGuid) is { ChannelID: var channelId })
                         {
                             var info = new ContentTypeChannelInfo { ContentTypeChannelChannelID = channelId, ContentTypeChannelContentTypeID = newDt.ClassID };
-                            ContentTypeChannelInfoProvider.ProviderObject.Set(info);
+                            ContentTypeChannelInfo.Provider.Set(info);
                         }
                         else
                         {
@@ -242,6 +240,8 @@ public class ClassMappingProvider(
 
     private void ExecReusableSchemaBuilders()
     {
+        var resolvedSchemas = new List<(IReusableSchemaBuilder Schema, FormFieldInfo[] Fields, SourceFieldIdentifier? SourceFieldIdentifier)>();
+
         foreach (var reusableSchemaBuilder in reusableSchemaBuilders)
         {
             reusableSchemaBuilder.AssertIsValid();
@@ -282,7 +282,7 @@ public class ClassMappingProvider(
                     {
                         case { Factory: { } factory }:
                         {
-                            return factory();
+                            return (Field: factory(), fb.SourceFieldIdentifier);
                         }
                         case { SourceFieldIdentifier: { } fieldIdentifier }:
                         {
@@ -320,7 +320,13 @@ public class ClassMappingProvider(
                                     $"Invalid reusable schema field builder for field '{fieldIdentifier.ClassName}': Class '{fieldIdentifier.ClassName}' is missing field '{fieldIdentifier.FieldName}'")
                             };
                             patchedFieldInfo.Name = fb.TargetFieldName;
-                            return patchedFieldInfo;
+
+                            if (fb.TargetFieldPatchers.ContainsKey(fb.TargetFieldName))
+                            {
+                                fb.TargetFieldPatchers[fb.TargetFieldName](patchedFieldInfo);
+                            }
+
+                            return (Field: patchedFieldInfo, fb.SourceFieldIdentifier);
                         }
                         default:
                         {
@@ -328,13 +334,53 @@ public class ClassMappingProvider(
                                 $"Invalid reusable schema field builder for field '{fb.TargetFieldName}'");
                         }
                     }
-                });
+                }).ToArray();
+
+                foreach (var fieldInfo in fieldInfos)
+                {
+                    resolvedSchemas.Add((reusableSchemaBuilder, [fieldInfo.Field], fieldInfo.SourceFieldIdentifier));
+                }
 
                 reusableSchemaService.EnsureReusableFieldSchema(reusableSchemaBuilder.SchemaName,
                     reusableSchemaBuilder.SchemaDisplayName, reusableSchemaBuilder.SchemaDescription,
-                    fieldInfos.ToArray());
+                    fieldInfos.Select(x => x.Field).ToArray());
             }
         }
+
+        void AssertReusableSchemasHaveNoDuplicateFieldGuids()
+        {
+            var fieldsFromSource = resolvedSchemas
+                .Where(x => x.SourceFieldIdentifier is not null)
+                .SelectMany(x => x.Fields.Select(f => new
+                {
+                    x.Schema.SchemaName,
+                    SourceField = x.SourceFieldIdentifier!,
+                    FieldGuid = f.Guid
+                }))
+                .ToList();
+
+            var duplicateGroups = fieldsFromSource
+                .GroupBy(f => (f.SourceField.ClassName.ToLowerInvariant(), f.SourceField.FieldName.ToLowerInvariant()))
+                .Where(g => g.Count() > 1);
+
+            foreach (var group in duplicateGroups)
+            {
+                var guidCollisions = group
+                    .GroupBy(f => f.FieldGuid)
+                    .Where(g => g.Count() > 1);
+
+                foreach (var collision in guidCollisions)
+                {
+                    string schemaNames = string.Join(", ", collision.Select(s => $"'{s.SchemaName}'"));
+                    throw new InvalidOperationException(
+                        $"Reusable schemas {schemaNames} share the same source field '{group.First().SourceField.ClassName}.{group.First().SourceField.FieldName}' " +
+                        $"and the resulting field GUID '{collision.Key}' is identical. This will cause a GUID collision. " +
+                        $"Use 'WithFieldPatch' to change the GUID (e.g., ffi.Guid = new Guid(...)) on at least one of the fields.");
+                }
+            }
+        }
+
+        AssertReusableSchemasHaveNoDuplicateFieldGuids();
     }
 
     private void EnsureSettings()

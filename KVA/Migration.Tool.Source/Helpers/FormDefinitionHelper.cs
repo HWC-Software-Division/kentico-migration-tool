@@ -39,6 +39,7 @@ public static class FormDefinitionHelper
             }
 
             var formInfo = new FormInfo(result);
+            //target.ClassFormDefinition = formInfo.GetXmlDefinition();
             ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
             target.ClassFormDefinition = EnsureVisibilityConditionOrdering(
                 ReinjectDependencyAttributes(formInfo.GetXmlDefinition(),
@@ -77,6 +78,7 @@ public static class FormDefinitionHelper
             }
 
             var formInfo = new FormInfo(result);
+            //target.ClassFormDefinition = formInfo.GetXmlDefinition();
             ApplyVisibilityConditions(formInfo, patcher.GetPendingVisibilityConditions());
             target.ClassFormDefinition = EnsureVisibilityConditionOrdering(formInfo.GetXmlDefinition(), logger, null);
         }

@@ -87,6 +87,7 @@ public class ContentItemMapper(
     ) : UmtMapperBase<CmsTreeMapperSource>, IUmtMapper<CustomModuleItemMapperSource>, IUmtMapper<CustomTableMapperSource>
 {
     private const string CLASS_FIELD_CONTROL_NAME = "controlname";
+    private static readonly Dictionary<string, string?> cultureToLanguageNameCache = new(StringComparer.OrdinalIgnoreCase);
 
     protected override IEnumerable<IUmtModel> MapInternal(CmsTreeMapperSource source)
     {
@@ -117,6 +118,8 @@ public class ContentItemMapper(
             yield break;
         }
 
+        //ฟังก์ชันนี้แปลง NodeGUID ของ K13 เป็น GUID แบบ deterministic version 5 (D9973F1A-1078-549A-...)
+        //โดยรวม SiteID เข้าไปด้วย เพื่อกัน GUID ชนกันกรณี page เดียวกันอยู่หลาย site GUID ปลายทางจึงไม่เท่าต้นทาง
         var contentItemGuid = spoiledGuidContext.EnsureNodeGuid(cmsTree.NodeGUID, cmsTree.NodeSiteID, cmsTree.NodeID);
 
         directive.ContentItemGuid = contentItemGuid;
@@ -162,7 +165,7 @@ public class ContentItemMapper(
             .FirstOrDefault();
         string? treePath = targetWebPage?.WebPageItemTreePath;
 
-        var websiteChannelInfo = WebsiteChannelInfoProvider.ProviderObject.Get(siteGuid);
+        var websiteChannelInfo = WebsiteChannelInfo.Provider.Get(siteGuid);
         var treePathConvertor = TreePathConvertor.GetSiteConverter(websiteChannelInfo.WebsiteChannelID);
         if (treePath == null)
         {
@@ -283,6 +286,8 @@ public class ContentItemMapper(
                 }
 
                 (contentItemCommonDataVisualBuilderTemplateConfiguration, contentItemCommonDataVisualBuilderWidgets, ndp) = visualBuilderPatcher.PatchJsonDefinitions(source.CmsTree.NodeSiteID, contentItemCommonDataVisualBuilderTemplateConfiguration, contentItemCommonDataVisualBuilderWidgets).GetAwaiter().GetResult();
+
+                contentItemCommonDataVisualBuilderWidgets = RenameNodeGuidToWebPageGuid(contentItemCommonDataVisualBuilderWidgets);
             }
 
             if (directive.PageTemplateIdentifier is not null)
@@ -325,7 +330,7 @@ public class ContentItemMapper(
 
                 var includedMetadata = configuration.IncludeExtendedMetadata.GetValueOrDefault(false) ? IncludedMetadata.Extended : IncludedMetadata.Basic;
                 FormFieldInfo[] commonFields = UnpackReusableFieldSchemas(fi.GetFields<FormSchemaInfo>()).ToArray();
-                var convertorContext = new ConvertorTreeNodeContext(cmsTree.NodeGUID, cmsTree.NodeSiteID, cmsDocument.DocumentID, false);
+                var convertorContext = new ConvertorTreeNodeContext(cmsTree.NodeGUID, cmsTree.NodeSiteID, cmsTree.NodeSKUID, cmsDocument.DocumentID, false);
 
                 if (sourceNodeClass.ClassIsCoupledClass)
                 {
@@ -344,7 +349,7 @@ public class ContentItemMapper(
                         throw new Exception("Error, unable to find coupled data primary key");
                     }
                     var coupledDataRow = coupledDataService.GetSourceCoupledDataRow(sourceNodeClass.ClassTableName!, primaryKeyName, cmsDocument.DocumentForeignKeyValue);
-
+                    
                     // Note: DocumentTags is a system field stored in CmsDocument with external="true"
                     // in both K13 and XbyK. It is NOT in the coupled data table and is skipped by
                     // MapCoupledDataFieldValues. Tag assignments are handled by --tag-values which
@@ -638,12 +643,17 @@ public class ContentItemMapper(
         {
             director.MediaInfoLoader = new Func<Guid, JToken>(LoadMediaInfo);
             director.Direct(contentItemSource, directiveFacade);
-            if (directiveFacade.Directive is not null)
+            if (directiveFacade.Directive is DropDirective)
             {
                 break;
             }
         }
-        directiveFacade.Directive!.FormerUrlPaths ??= contentItemSource.FormerUrlPaths;
+
+        if (directiveFacade.Directive is not DropDirective)
+        {
+            directiveFacade.Directive!.FormerUrlPaths ??= contentItemSource.FormerUrlPaths;
+        }
+
         return directiveFacade.Directive!;
     }
 
@@ -661,6 +671,8 @@ public class ContentItemMapper(
             string? pageTemplateConfiguration = adapter.DocumentPageTemplateConfiguration;
             string? pageBuildWidgets = adapter.DocumentPageBuilderWidgets;
             (pageTemplateConfiguration, pageBuildWidgets, bool ndp) = visualBuilderPatcher.PatchJsonDefinitions(checkoutVersion.NodeSiteID, pageTemplateConfiguration, pageBuildWidgets).GetAwaiter().GetResult();
+
+            pageBuildWidgets = RenameNodeGuidToWebPageGuid(pageBuildWidgets);
 
             #region Find existing guid
 
@@ -714,7 +726,7 @@ public class ContentItemMapper(
             var fi = new FormInfo(targetFormDefinition);
             var commonFields = UnpackReusableFieldSchemas(fi.GetFields<FormSchemaInfo>()).ToArray();
             var sfi = new FormInfo(sourceFormClassDefinition);
-            var convertorContext = new ConvertorTreeNodeContext(cmsTree.NodeGUID, cmsTree.NodeSiteID, adapter.DocumentID, false);
+            var convertorContext = new ConvertorTreeNodeContext(cmsTree.NodeGUID, cmsTree.NodeSiteID, cmsTree.NodeSKUID, adapter.DocumentID, false);
             if (sourceNodeClass.ClassIsCoupledClass)
             {
                 string primaryKeyName = "";
@@ -933,8 +945,6 @@ public class ContentItemMapper(
                     //    // leave as is
                     //    target[targetFieldName] = valueConvertor.Invoke(sourceValue, convertorContext);
                     //}
-
-                    // ----- New Version -------------- //
                     if ((fieldMigration.Actions?.Contains(TcaDirective.ConvertToPages) ?? false) && documentSourceObjectContext != null)
                     {
                         // GUID field -> Page selector value
@@ -1019,7 +1029,6 @@ public class ContentItemMapper(
                             target.SetValueAsJson(targetFieldName, pageReferences.ToArray());
                         }
                     }
-                    // ----- New Version -------------- //
 
                     if (fieldMigration.TargetFormComponent == "webpages" && documentSourceObjectContext != null)
                     {
@@ -1031,6 +1040,8 @@ public class ContentItemMapper(
                             {
                                 if (jToken.Path.EndsWith("NodeGUID", StringComparison.InvariantCultureIgnoreCase))
                                 {
+                                    //var patchedGuid = spoiledGuidContext.EnsureNodeGuid(jToken.Value<Guid>(), documentSourceObjectContext.CmsTree.NodeSiteID);
+                                    //jToken.Replace(JToken.FromObject(patchedGuid));
                                     var originalGuid = jToken.Value<Guid>();
                                     if (originalGuid == Guid.Empty)
                                     {
@@ -1058,6 +1069,7 @@ public class ContentItemMapper(
                 else
                 {
                     target[targetFieldName] = valueConvertor.Invoke(sourceValue, convertorContext);
+
 
                     // SAFETY GUARD: for guid→webpages fields with controlName==null,
                     // sections 938/1000 are skipped, leaving raw Guid.Empty from valueConvertor.
@@ -1110,6 +1122,7 @@ public class ContentItemMapper(
                 newField = commonFields
                     .FirstOrDefault(cf => ReusableSchemaService.RemoveClassPrefix(mapping?.TargetClassName ?? sourceNodeClass.ClassName, cf.Name).Equals(targetColumnName, StringComparison.InvariantCultureIgnoreCase));
             }
+
             // Guard: if migration produced null for a Required field that has no default value,
             // substitute an empty/zero default to avoid SQL NOT NULL constraint violations.
             // Log a warning so the user knows which field/page type needs attention.
@@ -1168,7 +1181,9 @@ public class ContentItemMapper(
                                     culture = modelFacade.SelectById<ICmsDocument>(attachmentDocumentId)?.DocumentCulture;
                                 }
 
-                                return assetFacade.GetAssetUri(attachment, culture);
+                                string? languageName = GetLanguageNameByCultureCode(culture);
+
+                                return assetFacade.GetAssetUri(attachment, languageName);
                             }
 
                             default:
@@ -1201,11 +1216,15 @@ public class ContentItemMapper(
         if (!allowedTypesDict.Contains(sourceNodeClassID))
         {
             var fieldInfo = targetClassFormInfo.GetFormField(targetFieldName);
-            var guidList = new List<Guid>();
+            if (fieldInfo is null)
+            {
+                return;
+            }
+            var guidList = new HashSet<Guid>();
             string? settingsString = fieldInfo.Settings[FormDefinitionPatcher.AllowedContentItemTypeIdentifiers] as string;
             if (settingsString is not null)
             {
-                guidList.AddRange(JsonConvert.DeserializeObject<Guid[]>(settingsString)!);
+                guidList.UnionWith(JsonConvert.DeserializeObject<Guid[]>(settingsString)!);
             }
             guidList.Add(modelFacade.SelectById<ICmsClass>(sourceNodeClassID)!.ClassGUID);
             settingsString = JsonConvert.SerializeObject(guidList.ToArray());
@@ -1511,5 +1530,60 @@ public class ContentItemMapper(
             ContentItemLanguageMetadataScheduledUnpublishWhen = null
         };
         yield return languageMetadataInfo;
+    }
+
+    private string? GetLanguageNameByCultureCode(string? cultureCode)
+    {
+        if (string.IsNullOrEmpty(cultureCode))
+        {
+            return null;
+        }
+
+        if (cultureToLanguageNameCache.TryGetValue(cultureCode, out var cachedLanguageName))
+        {
+            return cachedLanguageName;
+        }
+
+        var languageName = ContentLanguageInfo.Provider.Get()
+            .WhereEquals(nameof(ContentLanguageInfo.ContentLanguageCultureFormat), cultureCode)
+            .FirstOrDefault()?.ContentLanguageName;
+
+        cultureToLanguageNameCache[cultureCode] = languageName;
+
+        return languageName;
+    }
+
+    //Improve the ContentItemCommonDataVisualBuilderWidgets change nodeGuid to webPageGuid
+    private static string? RenameNodeGuidToWebPageGuid(string? widgetsJson)
+    {
+        if (string.IsNullOrWhiteSpace(widgetsJson))
+        {
+            return widgetsJson;
+        }
+
+        try
+        {
+            if (JToken.Parse(widgetsJson) is not JContainer root)
+            {
+                return widgetsJson;
+            }
+
+            var props = root.DescendantsAndSelf()
+                .OfType<JProperty>()
+                .Where(p => p.Name.Equals("nodeGuid", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var p in props)
+            {
+                p.Replace(new JProperty("webPageGuid", p.Value));
+            }
+
+            return props.Count == 0 ? widgetsJson : root.ToString(Formatting.None);
+        }
+        catch (JsonReaderException)
+        {
+            // ไม่ใช่ JSON (เช่นค่าเป็น 'NULL') ปล่อยตามเดิม
+            return widgetsJson;
+        }
     }
 }

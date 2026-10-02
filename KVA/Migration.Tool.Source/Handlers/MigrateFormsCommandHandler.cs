@@ -100,7 +100,18 @@ public class MigrateFormsCommandHandler(
                     }
                 }
 
-                Debug.Assert(ksClass.ClassTableName != null, "kx13Class.ClassTableName != null");
+                //Debug.Assert(ksClass.ClassTableName != null, "kx13Class.ClassTableName != null");
+                if (string.IsNullOrWhiteSpace(ksClass.ClassTableName))
+                {
+                    logger.LogError(
+                        "Class {ClassName} (GUID {ClassGuid}) has no ClassTableName set - skipping coupled data migration for this class. " +
+                        "Check CMS_Class in the source database for a custom table with a missing/empty ClassTableName.",
+                        ksClass.ClassName,
+                        ksClass.ClassGUID
+                    );
+                    continue;
+                }
+
                 // var csi = new ClassStructureInfo(kx13Class.ClassXmlSchema, kx13Class.ClassXmlSchema, kx13Class.ClassTableName);
 
                 XNamespace nsSchema = "http://www.w3.org/2001/XMLSchema";

@@ -1,13 +1,14 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Xml;
 using CMS.ContentEngine;
 using CMS.ContentEngine.Internal;
 using CMS.Core;
 using CMS.DataEngine;
 using CMS.FormEngine;
+using Kentico.Xperience.Admin.Base;
 using Kentico.Xperience.Admin.Base.Forms;
 using Microsoft.Extensions.Logging;
-
 using Migration.Tool.Common;
 using Migration.Tool.Common.Abstractions;
 using Migration.Tool.Common.Enumerations;
@@ -32,6 +33,8 @@ public class CmsClassMapper(
         primaryKeyMappingContext, protocol)
 {
     private const string REQUIRED_RULE_IDENTIFIER = "Kentico.Administration.RequiredValue";
+
+    private static readonly Lazy<HashSet<string>> defaultIcons = new(GetDefaultIcons);
 
     protected override DataClassInfo? CreateNewInstance(ICmsClass source, MappingHelper mappingHelper, AddFailure addFailure) =>
         DataClassInfo.New();
@@ -89,9 +92,21 @@ public class CmsClassMapper(
         target.ClassConnectionString = source.ClassConnectionString;
         target.ClassDefaultObjectType = source.ClassDefaultObjectType;
         target.ClassCodeGenerationSettings = source.ClassCodeGenerationSettings;
-        target.ClassIconClass = source.ClassIconClass is { } iconClass && iconClass.StartsWith("icon-", StringComparison.OrdinalIgnoreCase)
-            ? "xp-" + iconClass["icon-".Length..]
-            : source.ClassIconClass;
+
+        if (!string.IsNullOrEmpty(source.ClassIconClass))
+        {
+            // Convert the icon class to the new format if it starts with "icon-"
+            var iconClass = source.ClassIconClass.StartsWith("icon-", StringComparison.OrdinalIgnoreCase)
+                ? "xp-" + source.ClassIconClass[5..]
+                : source.ClassIconClass;
+
+            // Map the ClassIconClass only if it is in the default icons list to prevent validation exceptions
+            if (defaultIcons.Value.Contains(iconClass))
+            {
+                target.ClassIconClass = iconClass;
+            }
+        }
+
         if (source.ClassIsDocumentType)
         {
             target.ClassWebPageHasUrl = source switch
@@ -174,7 +189,7 @@ public class CmsClassMapper(
                     target.ClassType = ClassType.OTHER;
                     target.ClassContentTypeType = null;
                 }
-                target = PatchDataClassInfo(target, existingFieldGUIDs, modelFacade.SelectVersion(), [], IncludedMetadata.None, out string? oldPrimaryKeyName, out string? documentNameField);
+                target = PatchDataClassInfo(target, existingFieldGUIDs, modelFacade.SelectVersion(), IncludedMetadata.None, out string? oldPrimaryKeyName, out string? documentNameField);
 
                 break;
             }
@@ -208,7 +223,7 @@ public class CmsClassMapper(
                 target.ClassType = ClassType.CONTENT_TYPE;
                 target.ClassContentTypeType = ClassContentTypeType.REUSABLE;
 
-                target = PatchDataClassInfo(target, existingFieldGUIDs, modelFacade.SelectVersion(), [], configuration.IncludeExtendedMetadata.GetValueOrDefault(false) ? IncludedMetadata.Extended : IncludedMetadata.Basic, out string? oldPrimaryKeyName, out string? documentNameField);
+                target = PatchDataClassInfo(target, existingFieldGUIDs, modelFacade.SelectVersion(), configuration.IncludeExtendedMetadata.GetValueOrDefault(false) ? IncludedMetadata.Extended : IncludedMetadata.Basic, out string? oldPrimaryKeyName, out string? documentNameField);
                 break;
             }
 
@@ -226,7 +241,7 @@ public class CmsClassMapper(
                     ? ClassContentTypeType.REUSABLE
                     : ClassContentTypeType.WEBSITE;
 
-                target = PatchDataClassInfo(target, existingFieldGUIDs, modelFacade.SelectVersion(), [], configuration.IncludeExtendedMetadata.GetValueOrDefault(false) ? IncludedMetadata.Extended : IncludedMetadata.Basic, out string? oldPrimaryKeyName, out string? documentNameField);
+                target = PatchDataClassInfo(target, existingFieldGUIDs, modelFacade.SelectVersion(), configuration.IncludeExtendedMetadata.GetValueOrDefault(false) ? IncludedMetadata.Extended : IncludedMetadata.Basic, out string? oldPrimaryKeyName, out string? documentNameField);
                 break;
             }
 
@@ -270,7 +285,7 @@ public class CmsClassMapper(
         Extended
     }
 
-    public static DataClassInfo PatchDataClassInfo(DataClassInfo dataClass, Dictionary<string, Guid> existingFieldGUIDs, SemanticVersion version, Dictionary<Guid, string> reusableSchemaNames, IncludedMetadata includedMetadata, out string? oldPrimaryKeyName, out string? mappedLegacyField)
+    public static DataClassInfo PatchDataClassInfo(DataClassInfo dataClass, Dictionary<string, Guid> existingFieldGUIDs, SemanticVersion version, IncludedMetadata includedMetadata, out string? oldPrimaryKeyName, out string? mappedLegacyField)
     {
         oldPrimaryKeyName = null;
         mappedLegacyField = null;
@@ -301,7 +316,7 @@ public class CmsClassMapper(
 
             foreach (var dataDefinitionItem in fi.GetFormElements(true, true) ?? [])
             {
-                if (!nfi.ItemsList.Any(x => IsSameFormElement(reusableSchemaNames, dataDefinitionItem, x)))
+                if (!nfi.ItemsList.Any(x => IsSameFormElement(dataDefinitionItem, x)))
                 {
                     if (dataDefinitionItem is FormFieldInfo ffi)
                     {
@@ -345,7 +360,7 @@ public class CmsClassMapper(
 
             foreach (var field in GetLegacyMetadataFields(version, includedMetadata))
             {
-                AppendLegacyMetadataField(nfi, dataClass.ClassName, field, reusableSchemaNames, out mappedLegacyField);
+                AppendLegacyMetadataField(nfi, dataClass.ClassName, field, out mappedLegacyField);
             }
             dataClass.ClassFormDefinition = nfi.GetXmlDefinition();
 
@@ -385,7 +400,7 @@ public class CmsClassMapper(
         return null;
     }
 
-    private static void AppendLegacyMetadataField(FormInfo nfi, string newClassName, LegacyDocumentMetadataFieldMapping mapping, Dictionary<Guid, string> reusableSchemaNames, out string targetFieldName)
+    private static void AppendLegacyMetadataField(FormInfo nfi, string newClassName, LegacyDocumentMetadataFieldMapping mapping, out string targetFieldName)
     {
         if (GetMappedLegacyField(nfi, newClassName, mapping.LegacyFieldName) is { } fieldName)
         {
@@ -402,7 +417,7 @@ public class CmsClassMapper(
 
         var formFieldInfo = GetLegacyMetadataFormFieldInfo(mapping, targetFieldName, newClassName);
 
-        if (!nfi.ItemsList.Any(x => IsSameFormElement(reusableSchemaNames, formFieldInfo, x)))
+        if (!nfi.ItemsList.Any(x => IsSameFormElement(formFieldInfo, x)))
         {
             nfi.AddFormItem(formFieldInfo);
         }
@@ -423,7 +438,7 @@ public class CmsClassMapper(
     };
 
 
-    private static bool IsSameFormElement(Dictionary<Guid, string> reusableSchemaNames, IDataDefinitionItem element1, IDataDefinitionItem element2)
+    private static bool IsSameFormElement(IDataDefinitionItem element1, IDataDefinitionItem element2)
     {
         if (element1 is FormFieldInfo ffi1 && element2 is FormFieldInfo ffi2)
         {
@@ -431,9 +446,7 @@ public class CmsClassMapper(
         }
         else if (element1 is FormSchemaInfo fsi1 && element2 is FormSchemaInfo fsi2)
         {
-            return reusableSchemaNames.TryGetValue(fsi1.Guid, out string? schemaName1) &&
-                reusableSchemaNames.TryGetValue(fsi2.Guid, out string? schemaName2) &&
-                schemaName1.Equals(schemaName2, StringComparison.InvariantCultureIgnoreCase);
+            return fsi1.Guid == fsi2.Guid;
         }
         else
         {
@@ -474,4 +487,13 @@ public class CmsClassMapper(
         document.FirstChild.AppendChild(document.ImportNode(oNode, true));
         return document.FirstChild.InnerXml;
     }
+
+
+    private static HashSet<string> GetDefaultIcons() =>
+        typeof(Icons)
+            .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            .Where(f => f.IsLiteral && !f.IsInitOnly && f.FieldType == typeof(string))
+            .Select(f => f.GetRawConstantValue())
+            .OfType<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 }

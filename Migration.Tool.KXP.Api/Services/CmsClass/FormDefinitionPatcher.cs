@@ -1,13 +1,13 @@
-﻿using System.Xml.Linq;
+using System.Xml.Linq;
 using System.Xml.XPath;
 using CMS.Core;
 using CMS.EventLog;
 using System.Text.RegularExpressions;
 
 using Microsoft.Extensions.Logging;
+using Migration.Tool.Common.Enumerations;
 
 using Migration.Tool.Common;
-using Migration.Tool.Common.Enumerations;
 
 namespace Migration.Tool.KXP.Api.Services.CmsClass;
 
@@ -25,6 +25,7 @@ public class FormDefinitionPatcher
     public const int FieldAttrSizeZero = 0;
     public const string FieldAttrSystem = "system";
     public const string FieldAttrVisible = "visible";
+    public const string FieldAttrAllowEmpty = "allowempty";
     public const string FieldElem = "field";
     public const string FieldElemProperties = "properties";
     public const string FieldElemSettings = "settings";
@@ -35,10 +36,11 @@ public class FormDefinitionPatcher
     public const string SettingsMaximumassets = "MaximumAssets";
     public const string SettingsMaximumassetsFallback = "99";
     public const string SettingsMaximumpages = "MaximumPages";
+    public const string SettingsMaximumitems = "MaximumItems";
+    public const string SettingsMinimumitems = "MinimumItems";
     public const string SettingsMaximumpagesFallback = "99";
     public const string SettingsRootpath = "RootPath";
     public const string SettingsRootpathFallback = "/";
-    public const string FieldAttrAllowEmpty = "allowempty";
     public const string FieldAttrColumnsize = "columnsize";
     public const string PropertiesElemVisiblemacro = "visiblemacro";
     public const string FieldElemVisibilityConditionData = "visibilityconditiondata";
@@ -96,8 +98,7 @@ public class FormDefinitionPatcher
     /// <summary>ชื่อ class ที่กำลัง migrate เพื่อให้ IFieldMigration ใช้ค้นหา TaxonomyGUID</summary>
     public string? CurrentClassName { get; set; }
 
-    public FormDefinitionPatcher(
-        ILogger logger,
+    public FormDefinitionPatcher(ILogger logger,
         string formDefinitionXml,
         IFieldMigrationService fieldMigrationService,
         bool classIsForm,
@@ -121,18 +122,14 @@ public class FormDefinitionPatcher
         xDoc = XDocument.Parse(this.formDefinitionXml);
     }
 
-    public IEnumerable<string?> GetFieldNames() =>
-        xDoc.XPathSelectElements($"//{FieldElem}")
-            .Select(x => x.Attribute(FieldAttrColumn)?.Value);
+    public IEnumerable<string?> GetFieldNames() => xDoc.XPathSelectElements($"//{FieldElem}").Select(x => x.Attribute(FieldAttrColumn)?.Value);
 
     public void RemoveCategories()
     {
         var categories = (xDoc.Root?.XPathSelectElements($"//{CategoryElem}") ?? Enumerable.Empty<XElement>()).ToList();
-
         foreach (var xElement in categories)
         {
             string elementDescriptor = xElement.ToString();
-
             if (xElement.Attribute(FieldAttrName)?.Value is { } name)
             {
                 elementDescriptor = name;
@@ -150,23 +147,14 @@ public class FormDefinitionPatcher
         if (otherDoc.Root?.Elements() is { } elements)
         {
             var elementList = elements.ToList();
-
             foreach (var field in elementList)
             {
                 if (field.Attribute(FieldAttrColumn)?.Value is { } fieldToRemoveName)
                 {
-                    var fieldsToRemove = xDoc
-                        .XPathSelectElements($"//{FieldElem}[@column='{fieldToRemoveName}']")
-                        .ToList();
-
-                    if (fieldsToRemove.Count > 0)
+                    if (xDoc.XPathSelectElements($"//{FieldElem}[@column={fieldToRemoveName}]") is { } fieldToRemove)
                     {
                         logger.LogDebug("Field {FieldName} removed from definition", fieldToRemoveName);
-
-                        foreach (var fieldToRemove in fieldsToRemove)
-                        {
-                            fieldToRemove.Remove();
-                        }
+                        fieldToRemove.Remove();
                     }
                     else
                     {
@@ -186,22 +174,18 @@ public class FormDefinitionPatcher
         if (xDoc.Root?.Elements() is { } elements)
         {
             var elementList = elements.ToList();
-
             foreach (var fieldOrCategory in elementList)
             {
                 if (fieldOrCategory.Name == FieldElem)
                 {
-                    if (!(excludedFields ?? Array.Empty<string>()).Any(ef =>
-                            ef.Equals(fieldOrCategory.Attribute(FieldAttrColumn)?.Value, StringComparison.InvariantCultureIgnoreCase)))
+                    if (!(excludedFields ?? []).Any(ef => ef.Equals(fieldOrCategory.Attribute("column")?.Value, StringComparison.InvariantCultureIgnoreCase)))
                     {
                         PatchField(fieldOrCategory);
                     }
                 }
                 else if (fieldOrCategory.Name == CategoryElem)
                 {
-                    logger.LogDebug(
-                        "Category '{Category}' skipped",
-                        fieldOrCategory.Attribute(CategoryAttrName)?.Value ?? "<no category name>");
+                    logger.LogDebug("Category '{Category}' skipped", fieldOrCategory.Attribute(CategoryAttrName)?.Value ?? "<no category name>");
                 }
                 else
                 {
@@ -266,18 +250,14 @@ public class FormDefinitionPatcher
             EventLogProvider.LogEvent(eventInfo);
         }
 
-        foreach (var a in field.Attributes().ToList())
+        // cleanup of no longer supported fields
+        foreach (var a in field.Attributes())
         {
             string an = a.Name.ToString();
             if (!allowedFieldAttributes.Contains(an))
             {
-                logger.LogTrace(
-                    "Removing attribute '{AttributeName}'='{Value}' from field with column '{ColumnName}'",
-                    an,
-                    a.Value,
-                    columnAttr?.Value);
-
                 a.Remove();
+                logger.LogTrace("Removing attribute '{AttributeName}'='{Value}' from field with column '{ColumnName}'", an, a.Value, columnAttr?.Value);
             }
         }
 
@@ -300,14 +280,11 @@ public class FormDefinitionPatcher
             return;
         }
 
+
         var controlNameElem = field.XPathSelectElement($"{FieldElemSettings}/{SettingsElemControlname}");
         string? controlName = controlNameElem?.Value;
 
-        var fieldMigrationContext = new FieldMigrationContext(
-            columnType,
-            controlName,
-            columnAttr?.Value,
-            new EmptySourceObjectContext());
+        var fieldMigrationContext = new FieldMigrationContext(columnType, controlName, columnAttr?.Value, new EmptySourceObjectContext());
 
         // Extract before the switch — TfcDirective.Clear calls field.RemoveNodes() which would destroy <visiblemacro>
         string? visibilityConditionJson = ExtractVisibilityConditionXml(field, fieldDescriptor);
@@ -316,11 +293,8 @@ public class FormDefinitionPatcher
         {
             case FieldMigration(_, var targetDataType, _, var targetFormComponent, var actions, _):
             {
-                logger.LogDebug(
-                    "Field {FieldDescriptor} DataType: {SourceDataType} => {TargetDataType}",
-                    fieldDescriptor,
-                    columnType,
-                    targetDataType);
+                logger.LogDebug("Field {FieldDescriptor} DataType: {SourceDataType} => {TargetDataType}", fieldDescriptor, columnType, targetDataType);
+                columnTypeAttr?.SetValue(targetDataType);
 
                 if (string.Equals(columnAttr?.Value, "PageInternalRedirectNodeGuid", StringComparison.InvariantCultureIgnoreCase))
                 {
@@ -356,45 +330,37 @@ public class FormDefinitionPatcher
                 switch (targetFormComponent)
                 {
                     case TfcDirective.DoNothing:
-                        logger.LogDebug(
-                            "Field {FieldDescriptor} ControlName: Tca:{TcaDirective}",
-                            fieldDescriptor,
-                            targetFormComponent);
+                        logger.LogDebug("Field {FieldDescriptor} ControlName: Tca:{TcaDirective}", fieldDescriptor, targetFormComponent);
                         PerformActionsOnField(field, fieldDescriptor, actions);
                         break;
-
                     case TfcDirective.Clear:
                         logger.LogDebug("Field {FieldDescriptor} ControlName: Tca:{TcaDirective}", fieldDescriptor, targetFormComponent);
                         field.RemoveNodes();
+                        visibleAttr?.SetValue(false);
                         break;
-
                     case TfcDirective.CopySourceControl:
                         logger.LogDebug("Field {FieldDescriptor} ControlName: Tca:{TcaDirective} => {ControlName}", fieldDescriptor, targetFormComponent, controlName);
                         controlNameElem?.SetValue(controlName!);
                         PerformActionsOnField(field, fieldDescriptor, actions);
                         break;
-
                     default:
                     {
                         logger.LogDebug("Field {FieldDescriptor} ControlName: Tca:NONE => from control '{ControlName}' => {TargetFormComponent}", fieldDescriptor, controlName, targetFormComponent);
                         controlNameElem?.SetValue(targetFormComponent!);
-
                         if (allowNullSourceFormControl)
                         {
-                            field.EnsureElement("settings", s =>
-                                s.EnsureElement(SettingsElemControlname, cn => cn.Value = targetFormComponent!));
-
+                            var settingsElement = field.EnsureElement("settings", s =>
+                                s.EnsureElement(SettingsElemControlname, cn => cn.Value = targetFormComponent!)
+                            );
+                            // set settings child node with controlname
                             field.SetAttributeValue(SettingsElemControlname, targetFormComponent);
                         }
-
                         PerformActionsOnField(field, fieldDescriptor, actions);
                         break;
                     }
                 }
-
                 break;
             }
-
             case { } fieldMigration when fieldMigration.ShallMigrate(fieldMigrationContext):
             {
                 fieldMigration.MigrateFieldDefinition(this, field, columnTypeAttr, fieldDescriptor);
@@ -408,7 +374,6 @@ public class FormDefinitionPatcher
         if (!classIsForm && !classIsDocumentType)
         {
             bool hasVisibleAttribute = visibleAttr != null;
-
             if (enabledAttr is { } enabled)
             {
                 enabled.Remove();
@@ -439,7 +404,6 @@ public class FormDefinitionPatcher
             foreach (var fieldChildNode in field.Elements().ToList())
             {
                 logger.LogDebug("Patching filed child '{FieldChildName}'", fieldChildNode.Name);
-
                 switch (fieldChildNode.Name.ToString())
                 {
                     case FieldElemProperties:
@@ -455,6 +419,7 @@ public class FormDefinitionPatcher
                         }
                         else
                         {
+                            // XbK Resource / Module class no longer supports visual representation
                             ClearSettings(fieldChildNode);
                         }
 
@@ -472,15 +437,10 @@ public class FormDefinitionPatcher
 
         if (classIsForm || classIsDocumentType)
         {
-            if (field.Attribute(FieldAttrVisible) is { } visible)
+            if (field.Attribute(FieldAttrVisible) is { } visible && field.Attribute(FieldAttrEnabled) is null)
             {
-                field.SetAttributeValue(FieldAttrEnabled, visible.Value);
-                logger.LogDebug(
-                    "Set field '{Field}' attribute '{Attribute}' to value '{Value}' from attribute '{SourceAttribute}'",
-                    fieldDescriptor,
-                    FieldAttrEnabled,
-                    visible.Value,
-                    FieldAttrVisible);
+                field.Add(new XAttribute(FieldAttrEnabled, visible.Value));
+                logger.LogDebug("Set field '{Field}' attribute '{Attribute}' to value '{Value}' from attribute '{SourceAttribute}'", fieldDescriptor, FieldAttrEnabled, visible, FieldAttrVisible);
             }
         }
 
@@ -562,6 +522,26 @@ public class FormDefinitionPatcher
         }
     }
 
+    // K13 signs macros with a security context appended after the expression, in one of these
+    // forms: "|(identity)Username|(hash)HEX", "|(user)Username|(hash)HEX", or a bare
+    // "|(hash)HEX" on its own. Returns the index where this signature starts (i.e. where the
+    // real expression ends), or -1 if none of the markers are present.
+    private static int IndexOfMacroSecuritySignature(string expression)
+    {
+        ReadOnlySpan<string> markers = ["|(identity)", "|(user)", "|(hash)"];
+        int earliest = -1;
+        foreach (string marker in markers)
+        {
+            int idx = expression.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0 && (earliest == -1 || idx < earliest))
+            {
+                earliest = idx;
+            }
+        }
+
+        return earliest;
+    }
+
     private string? ExtractVisibilityConditionXml(XElement field, string fieldDescriptor)
     {
         var propertiesElem = field.Element(FieldElemProperties);
@@ -584,15 +564,27 @@ public class FormDefinitionPatcher
         // Strip Kentico macro wrapper {% ... %} if present
         if (conditionExpression.StartsWith("{%") && conditionExpression.EndsWith("%}"))
         {
-            conditionExpression = conditionExpression[2..^2];
-            // Remove the security context appended after the first pipe
-            int pipeIdx = conditionExpression.IndexOf("|(identity)", StringComparison.OrdinalIgnoreCase);
-            if (pipeIdx >= 0)
-            {
-                conditionExpression = conditionExpression[..pipeIdx];
-            }
-            conditionExpression = conditionExpression.Trim();
+            conditionExpression = conditionExpression[2..^2].Trim();
+            //// Remove the security context appended after the first pipe
+            //int pipeIdx = conditionExpression.IndexOf("|(identity)", StringComparison.OrdinalIgnoreCase);
+            //if (pipeIdx >= 0)
+            //{
+            //    conditionExpression = conditionExpression[..pipeIdx];
+            //}
+            //conditionExpression = conditionExpression.Trim();
         }
+
+        // Strip macro security signature suffix, e.g. "|(identity)GlobalAdministrator|(hash)..."
+        // or "|(user)SUPERADMIN|(hash)...". K13 appends this to signed macros to prevent tampering;
+        // it carries no information relevant to the visibility condition itself, so it's safe to
+        // drop. This can appear whether or not the expression was wrapped in {% %}, so check
+        // unconditionally rather than only inside the wrapper branch above.
+        int sigIdx = IndexOfMacroSecuritySignature(conditionExpression);
+        if (sigIdx >= 0)
+        {
+            conditionExpression = conditionExpression[..sigIdx];
+        }
+        conditionExpression = conditionExpression.Trim();
 
         // Field has a visibility condition — it must not be required, or validation will fire
         // when the field is hidden. Clear allowempty regardless of whether the condition parses.
@@ -757,7 +749,6 @@ public class FormDefinitionPatcher
     private void ClearSettings(XElement settingsElem)
     {
         var elementsToRemove = settingsElem.Elements().ToList();
-
         foreach (var element in elementsToRemove)
         {
             logger.LogDebug("Removing settings element '{ElementName}'", element.Name);
@@ -787,6 +778,7 @@ public class FormDefinitionPatcher
             settingsElem.Remove();
         }
     }
+
 
     //private void PatchProperties(XElement properties)
     //{
@@ -824,6 +816,7 @@ public class FormDefinitionPatcher
             element.Remove();
         }
     }
+
     private void PerformActionsOnField(XElement field, string fieldDescriptor, string[]? actions)
     {
         if (actions == null)
@@ -834,7 +827,6 @@ public class FormDefinitionPatcher
         foreach (string action in actions)
         {
             logger.LogDebug("Field {FieldDescriptor} Action: {Action}", fieldDescriptor, action);
-
             switch (action)
             {
                 case TcaDirective.ClearSettings:
@@ -855,11 +847,12 @@ public class FormDefinitionPatcher
                 }
                 case TcaDirective.ConvertToPages:
                 {
-                    field.EnsureElement(FieldElemSettings, settings =>
-                    {
-                        settings.EnsureElement(SettingsMaximumpages, maxAssets => maxAssets.Value = SettingsMaximumpagesFallback);
-                        settings.EnsureElement(SettingsRootpath, maxAssets => maxAssets.Value = SettingsRootpathFallback);
-                    });
+                    field
+                        .EnsureElement(FieldElemSettings, settings =>
+                        {
+                            settings.EnsureElement(SettingsMaximumpages, maxAssets => maxAssets.Value = SettingsMaximumpagesFallback);
+                            settings.EnsureElement(SettingsRootpath, maxAssets => maxAssets.Value = SettingsRootpathFallback);
+                        });
 
                     field.SetAttributeValue(FieldAttrSize, FieldAttrSizeZero);
 
@@ -872,8 +865,7 @@ public class FormDefinitionPatcher
                 case TcaDirective.ConvertToRichText:
                 {
                     field
-                        .EnsureElement(FieldElemSettings, settings =>
-                            settings.EnsureElement("ConfigurationName", e => e.Value = "Kentico.Administration.StructuredContent"));
+                        .EnsureElement(FieldElemSettings, settings => settings.EnsureElement("ConfigurationName", e => e.Value = "Kentico.Administration.StructuredContent"));
                     break;
                 }
                 case "ConvertDropdownOptions":
@@ -910,6 +902,7 @@ public class FormDefinitionPatcher
 
                     break;
                 }
+                // ReSharper disable once RedundantEmptySwitchSection - not redundant, IDE0010 required to specify default switch branch
                 default:
                 {
                     break;

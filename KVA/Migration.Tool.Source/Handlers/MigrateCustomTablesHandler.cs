@@ -148,14 +148,57 @@ public class MigrateCustomTablesHandler(
 
                 if (ksClass.ClassShowAsSystemTable is false)
                 {
-                    Debug.Assert(xbkDataClass.ClassTableName != null, "kx13Class.ClassTableName != null");
+                    //Debug.Assert(xbkDataClass.ClassTableName != null, "kx13Class.ClassTableName != null");
+                    if (string.IsNullOrWhiteSpace(xbkDataClass.ClassTableName))
+                    {
+                        logger.LogError(
+                            "Class {ClassName} (GUID {ClassGuid}) has no ClassTableName set - skipping coupled data migration for this class. " +
+                            "Check CMS_Class in the source database for a custom table with a missing/empty ClassTableName.",
+                            xbkDataClass.ClassName,
+                            ksClass.ClassGUID
+                        );
+                        continue;
+                    }
+
                     // var csi = new ClassStructureInfo(kx13Class.ClassXmlSchema, kx13Class.ClassXmlSchema, kx13Class.ClassTableName);
 
                     XNamespace nsSchema = "http://www.w3.org/2001/XMLSchema";
                     XNamespace msSchema = "urn:schemas-microsoft-com:xml-msdata";
-
                     //var xDoc = XDocument.Parse(xbkDataClass.ClassXmlSchema);
                     XDocument? xDoc = null;
+
+                    //var autoIncrementColumns = xDoc.Descendants(nsSchema + "element")
+                    //    .Where(x => x.Attribute(msSchema + "AutoIncrement")?.Value == "true")
+                    //    .Select(x => x.Attribute("name")?.Value).ToImmutableHashSet();
+
+                    //Debug.Assert(autoIncrementColumns.Count == 1, "autoIncrementColumns.Count == 1");
+                    //var r = (xbkDataClass.ClassTableName, xbkDataClass.ClassGUID, autoIncrementColumns);
+                    //logger.LogTrace("Class '{ClassGuild}' Resolved as: {Result}", ksClass.ClassGUID, r);
+
+                    //try
+                    //{
+                    //    // check if data is present in target tables
+                    //    if (bulkDataCopyService.CheckIfDataExistsInTargetTable(xbkDataClass.ClassTableName))
+                    //    {
+                    //        logger.LogWarning("Data exists in target coupled data table '{TableName}' - cannot migrate, skipping form data migration", r.ClassTableName);
+                    //        protocol.Append(HandbookReferences.DataMustNotExistInTargetInstanceTable(xbkDataClass.ClassTableName));
+                    //        continue;
+                    //    }
+
+                    //    var bulkCopyRequest = new BulkCopyRequest(
+                    //        xbkDataClass.ClassTableName,
+                    //        s => true, // s => !autoIncrementColumns.Contains(s),
+                    //        _ => true,
+                    //        20000
+                    //    );
+
+                    //    logger.LogTrace("Bulk data copy request: {Request}", bulkCopyRequest);
+                    //    bulkDataCopyService.CopyTableToTable(bulkCopyRequest);
+                    //}
+                    //catch (Exception ex)
+                    //{
+                    //    logger.LogError(ex, "Error while copying data to table");
+                    //}
 
                     try
                     {
@@ -229,7 +272,6 @@ public class MigrateCustomTablesHandler(
                         logger.LogError(ex, "Error while copying data to table");
                     }
                 }
-
                 #endregion
             }
         }

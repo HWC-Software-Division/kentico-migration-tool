@@ -1,76 +1,190 @@
-This repository is clone from the [Xperience by Kentico Migration Toolkit](https://github.com/Kentico/xperience-by-kentico-migration-toolkit).
+# Xperience by Kentico: Kentico Migration Tool
 
-We will use to custom the migration-tool for migrate Kentico 13 to Xperience by Kentico (XbyK)
+[![7-day bug-fix policy](https://img.shields.io/badge/-7--days_bug--fixing_policy-grey?labelColor=orange&logo=data:image/svg+xml;base64,PHN2ZyBjbGFzcz0ic3ZnLWljb24iIHN0eWxlPSJ3aWR0aDogMWVtOyBoZWlnaHQ6IDFlbTt2ZXJ0aWNhbC1hbGlnbjogbWlkZGxlO2ZpbGw6IGN1cnJlbnRDb2xvcjtvdmVyZmxvdzogaGlkZGVuOyIgdmlld0JveD0iMCAwIDEwMjQgMTAyNCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik08ODguNDkgMjIyLjY4NnYtMzEuNTRsLTY1LjY3Mi0wLjk1NWgtMC4yMDVhNDY1LjcxNSA0NjUuNzE1IDAgMCAxLTE0NC4zMTUtMzEuMzM0Yy03Ny4wMDUtMzEuMTk4LTEyNi4yOTQtNjYuNzY1LTEyNi43MDMtNjcuMTA3bC0zOS44LTI4LjY3Mi0zOS4xODUgMjguNDY4Yy0yLjA0OCAxLjUwMS00OS45MDMgMzYuMDQ0LTEyNi45MDggNjcuMzFhNDQ3LjQyIDQ0Ny40MiAwIDAgMS0xNDQuNTIgMzEuMzM1bC02NS44NzcgMC45NTZ2Mzc4Ljg4YzAgODcuMDQgNDkuODM0IDE4NC42NjEgMTM3LjAxIDI2Ny44MSAzNy41NDcgMzUuODQgNzkuMjU4IDY2LjM1NSAxMjAuODMzIDg4LjIgNDMuMjggMjIuNzMzIDg0LjI0IDM0LjYxMiAxMTguODUyIDM0LjYxMiAzNC40MDYgMCA3NS43NzYtMTIuMTUyIDExOS42MDMtMzUuMTU4YTU0Ny45NzcgNTQ3Ljk3NyAwIDAgMCAxMjAuMDEzLTg3LjY1NCA1MTUuMjA5IDUxNS4yMDkgMCAwIDAgOTYuMTg4LTEyMi44OGMyNy4xMDItNDkuNTYyIDQwLjgyMy05OC4zMDQgNDAuODIzLTE0NC45OTlsLTAuMTM2LTM0Ny4yMDR6TTUxMC4wOSAxNDMuNDI4bDEuNzA2LTEuMzY1IDEuNzc1IDEuMzY1YzUuODAzIDQuMTY1IDU5LjUyOSA0MS44NDggMTQwLjM1NiA3NC43NTIgNzkuMTkgMzIuMDg2IDE1My42IDM1LjYzNSAxNjcuNjYzIDM2LjA0NWwyLjU5NCAwLjA2OCAwLjIwNSAzMTUuNzM0YzAuMTM3IDY5LjQ5NS00Mi41OTggMTUwLjE4Ni0xMTcuMDc3IDIyMS40NTdDNjQxLjU3IDg1NC4yODkgNTYzLjEzIDg5Ni40NzggNTEyIDg5Ni40NzhjLTIzLjY4OSAwLTU1LjU3LTkuODk5LTg5LjcwMi0yNy43ODVhNDc4LjgyMiA0NzguODIyIDAgMCAxLTEwNS42MDktNzcuMjc4QzI0Mi4yMSA3MjAuMjEzIDE5OS40NzUgNjM5LjUyMiAxOTkuNDc1IDU2OS44OVYyNTQuMjI1bDIuNzMtMC4xMzZjMy4yNzggMCA4Mi42MDQtMS41MDIgMTY3LjY2NC0zNS45NzdhNzM5Ljk0MiA3MzkuOTQyIDAgMCAwIDE0MC4yMi03NC42MTV2LTAuMDY5eiIgIC8+PHBhdGggZD0iTTcxMy4zMTggMzY4LjY0YTMyLjIyMiAzMi4yMjIgMCAwIDAtNDUuMzI5IDBMNDQ5LjE5NSA1ODcuNDM1bC05My4xODQtOTMuMTE2YTMyLjIyMiAzMi4yMjIgMCAwIDAtNDUuMzMgMCAzMi4yMjIgMzIuMjIyIDAgMCAwIDAgNDUuMjZsMTE1Ljg1IDExNS44NWEzMi4yOSAzMi4yOSAwIDAgMCA0NS4zMjggMEw3MTMuMzIgNDEzLjlhMzIuMjIyIDMyLjIyMiAwIDAgMCAwLTQ1LjMzeiIgIC8+PC9zdmc+)](https://github.com/Kentico/.github/blob/main/SUPPORT.md#full-support)
 
-**List of improvements:**
-1. Improved Kylie migration conditions : Media file and MigratePages
-  + KVAMigration.Tool.Source\Handlers
-    - MigratePagesCommandHandler.cs
-  + Migration.Tool.Common\Helpers
-    - MediaLinkService.cs
+[![CI: Build and Test](https://github.com/Kentico/xperience-by-kentico-kentico-migration-tool/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/Kentico/xperience-by-kentico-kentico-migration-tool/actions/workflows/build.yml)
 
-2. Improved Firn migration conditions : support multiple languages media file (contnet hub)
-   + KVAMigration.Tool.Source\Services
-     - MediaFileMigratorToContentitem.cs
-       
-3. Improved Firn migration conditions : support custom field Media file (LegacyMediaFileReleaseDateField)
-   + KVAMigration.Tool.Source\Model
-     - MediaFile.cs
-   + KVAMigration.Tool.Source\Services
-     - AssetFacade.cs
+## Description
 
-4. Improved Firn migration conditions : support re-migrate case of multi workspace
-   + Migration.Tool.CLI\appsettings.json
-    "TargetWorkspaceName": "KenticoDefault" //Your Default channel name
+This repository is part of the [Xperience by Kentico Migration Toolkit](https://github.com/Kentico/xperience-by-kentico-migration-toolkit).
 
-5. Improved Firn migration conditions : support Media file about AllowedContentTypes
-   + Migration.Tool.Extensions\DefaultMigrations\AssetMigration.cs
+The Kentico Migration Tool transfers content and other data from **Kentico Xperience 13**, **Kentico 12** or **Kentico 11** to **Xperience by Kentico**.
 
----
+The tool migrates data models and content only. Code migration is not supported. Migrations can be performed multiple times with built-in and custom data transformations.
 
-## Change log (May – Jul 2026)
+## Complete Upgrade Documentation
 
-รายการปรับแก้เพิ่มเติม เรียงตามหัวข้อ (อ้างอิงจาก git history)
+This repository contains the data migration tool and its technical reference documentation. For comprehensive guidance on upgrading from Kentico Xperience 13 to Xperience by Kentico, including planning, walkthroughs, and advanced techniques, see the [Learn portal upgrade guides](https://docs.kentico.com/x/migrate_from_kx13_guides).
 
-### 6. Migrate Tags : K13 `CMS_TagGroup` / `CMS_Tag` → XbyK Taxonomy / Terms
-Migrate กลุ่มแท็กและแท็กจาก K13 มาเป็น Taxonomy และ Taxonomy Terms ใน XbyK พร้อม migrate ค่าแท็กของแต่ละหน้า
-   + KVA\Migration.Tool.Source\Handlers
-     - MigrateTagsCommandHandler.cs
-   + KVA\Migration.Tool.Source\Mappers
-     - CmsTagMapper.cs  (CMS_Tag → Term)
-     - TagMapper.cs     (CMS_Category → Tag)
-   + KVA\Migration.Tool.Source\Handlers
-     - MigrateTagValuesCommandHandler.cs
-   + Migration.Tool.Extensions\DefaultMigrations
-     - TagTaxonomyFieldMigration.cs
+**Quick Links:**
 
-### 7. Fixed Tags codeName (duplicate / ภาษาไทย / ชื่อพ้อง)
-แก้ปัญหา `CodeNameNotUniqueException: tag code name already exists` (เดิม fail 1,564 → 0)
-   + KVA\Migration.Tool.Source\Mappers\CmsTagMapper.cs , TagMapper.cs
-     - เติม code name ของ TagGroup เป็น prefix กันชนข้ามกลุ่ม : `{group}_{tag}`
-     - ชื่อที่มีอักขระ non-ASCII (ไทย/ไทยปนอังกฤษ) ใช้ `TagGuid`/`CategoryGUID` เดิมจาก K13 เป็น code name แทน hex ที่ถูกตัด 40 ตัว (คงที่ทุกรอบ re-migrate) — `TagTitle` ยังเก็บชื่อไทยไว้แสดงผล
-   + KVA\Migration.Tool.Source\Handlers\MigrateTagsCommandHandler.cs
-     - เมื่อ code name ชน (เช่น "LGBTQ+" กับ "LGBTQ") retry ด้วย `_{TagGuid}` ต่อท้าย ให้เข้าครบ
-     - ข้าม tag ที่ไม่มีชื่อ (ข้อมูลขยะจาก K13) เป็น warning แทน error
+- [Upgrade overview](https://docs.kentico.com/x/migrate_from_kx13_overview_guides) - High-level overview of the upgrade process
+- [Upgrades FAQ for architects and team leads](https://docs.kentico.com/x/upgrade_from_kx13_faq_guides) - Common questions and challenges
+- [Plan your strategy](https://docs.kentico.com/x/plan_your_strategy_for_migrating_features_guides) - Feature comparison and effort estimation
+- [Upgrade walkthrough](https://docs.kentico.com/x/upgrade_walkthrough_guides) - Hands-on tutorial with the Dancing Goat sample site
+- [Advanced upgrade deep dives](https://docs.kentico.com/x/upgrade_deep_dives_guides) - Developer-focused guides for customizing migrations and handling complex scenarios
+- [Upgrade to Xperience by Kentico - development and execution](https://docs.kentico.com/paths/xbyk-upgrade-developer) - Hands-on learning path for developers executing upgrades
 
-### 8. Fixed Content Folder (media) name — โฟลเดอร์ไทย / ชื่อซ้ำ / ยาวเกิน
-แก้ media migration crash `Unable to obtain unique name` และ `CodeNameNotValidException` ของ media library ที่มีโฟลเดอร์ภาษาไทยหรือชื่อซ้ำ
-   + Migration.Tool.Common\Services\ContentFolderService.cs
-     - ชื่อโฟลเดอร์ที่มี non-ASCII (ไทย) → ใช้ folder GUID เป็น code name (`ContentFolderDisplayName` ยังเป็นไทยให้ผู้ใช้เห็น)
-     - ชื่อโฟลเดอร์ซ้ำทั่ว tree (เช่น `pdf`/`en`/`th` ใต้ทุก bulletin) → ต่อท้าย code name ด้วย 8 ตัวแรกของ GUID (deterministic ต่อ path) กันหมด suffix pool ของ `UniqueNameHelper` (460 แบบ)
-     - จำกัด `ContentFolderName` ไม่เกิน 50 ตัวอักษร (ตัดชื่อฐานก่อนต่อ suffix)
+> [!IMPORTANT]
+> When planning an upgrade, note special considerations for [deploying to production](https://docs.kentico.com/guides/upgrade-to-xbyk/upgrade-from-kx13/upgrade-faq#are-there-special-considerations-when-deploying-an-upgraded-project-to-production-for-the-first-time) and [deploying to SaaS](https://docs.kentico.com/guides/upgrade-to-xbyk/upgrade-from-kx13/upgrade-faq#are-there-special-considerations-when-performing-an-upgrade-using-xperience-by-kentico-saas).
 
-### 9. Fixed RichText / LongText field → nvarchar(max) (กัน content ยาวโดนตัด)
-แก้ `String or binary data would be truncated` ของ field เนื้อหา HTML ยาว (ArticleBody, Detail, SummaryText, ContentDetail ฯลฯ)
-   + Migration.Tool.KXP.Api\Services\CmsClass\FormFieldMappingModel.cs
-     - `RichTextHTML` และ `LongText (HtmlAreaControl)` map เป็น `FieldDataType.LongText` (nvarchar(max)) แทน `Text` (มีเพดาน) — ยังใช้ Form component เป็น Text area เหมือนเดิม
+## Technical Documentation (This Repository)
 
-### 10. Visibility conditions & field type (K13 → XbyK)
-   + migrate K13 field visibility macros → XbyK XML ; แก้ลำดับ field ของ visibility condition (target field ต้องมาก่อน) ; แปลง field int → text (Dropdown/Radio)
+Technical reference documentation for configuring and running the migration tool:
 
-### 11. Custom Tables (ปรับปรุงหลายรอบ)
-   + KVA\Migration.Tool.Source\Handlers\MigrateCustomTablesHandler.cs
-     - เก็บ controlname เดิมของ K13 ; เก็บ FormInfo settings ครบ (Autoresize, MediaDialogConfiguration, min/max/step ฯลฯ) ; รองรับ `<visible>` attribute ; แก้ error ตอน re-migrate ; แก้ ItemGUID type mismatch
+- **[Migration CLI README](./Migration.Tool.CLI/README.md)** - Commands, configuration options, object-specific instructions
+- **[Supported Data](./docs/Supported-Data.md)** - Complete list of what can/cannot be migrated
+- **[Repository Structure](./docs/Repository-Structure.md)** - Project organization, component relationships, codebase navigation
+- **[Customization Guide](./docs/Customization-Guide.md)** - How you can customize this migration tool and how to choose the right customization approach
+- **[Contributing Setup](./docs/Contributing-Setup.md)** - For contributors to this tool
 
-### 12. Robustness / logging
-   + แยก log ตาม type (full / warning / error) ; กัน page import crash จาก media file content item ที่หาย ; รองรับ fileUpload ค่า null ; contact & activity migration (contact management)
+## How Data Migration Works
+
+The migration tool transfers data from source databases (K11/KX12/KX13) to Xperience by Kentico, transforming data structures as needed:
+
+![Migration Flow Diagram](./images/diagrams/migration-flow.drawio.svg)
+
+The migration follows six sequential steps:
+
+1. **Execute CLI 'migrate' Command** - Initiates the process
+2. **Read configuration** - Loads settings from appsettings.json
+3. **Load source data** - Retrieves data from source database (K11/KX12/KX13), filesystem (media/attachments), and API (widget info for KX13)
+4. **Transform Data** - Applies built-in mappers and custom migrations (field, widget, and class mappings)
+5. **Write to target** - Uses [Universal Migration Tool](https://github.com/Kentico/xperience-by-kentico-universal-migration-tool) (primary), XbyK API, or Bulk SQL copy to recreate content and other data in your target Xperience by Kentico instance.
+6. **Generate Reports** - Outputs console logs and log files
+
+The migration tool is:
+
+- **Iterative** - Supports multiple runs that update existing data without creating duplicates (UPSERT behavior)
+- **Selective** - Migrates only specific data types using command parameters
+- **Extensible** - Applies custom transformations for project-specific requirements
+
+> [!NOTE]
+> **Architecture note:** Migration execution is orchestrated using the [**Mediator pattern**](https://refactoring.guru/design-patterns/mediator), implemented with [**MediatR**](https://github.com/LuckyPennySoftware/MediatR) command handlers and pipeline behaviors. This means individual migration commands are handled through a central dispatching layer, which keeps execution flow modular and makes it easier to extend, customize, and reason about stage-specific behavior. For customization entry points, see [When You Need Customization](#when-you-need-customization).
+
+## How to Run the Kentico Migration Tool
+
+### Prerequisites
+
+Before running the migration, ensure you have:
+
+- **Source instance** (K11/KX12/KX13) running and accessible
+  - KX13 must be **Refresh 5 (hotfix 13.0.64) or higher**
+- **Target Xperience by Kentico instance** set up and running
+  - must be compatible with the version of migration tool (see [version compatibility matrix](#library-version-matrix))
+- **[.NET 8.0 or newer](https://dotnet.microsoft.com/en-us/download/dotnet) SDK** installed
+- **Kentico Migration Tool source code** cloned or downloaded from this repository
+
+  > [!NOTE]
+  > We recommend to maintain a separate copy of the Migration Tool per project to keep project-specific configurations and customizations isolated.
+
+> **Need help with instance setup?** The [Migration CLI README](./Migration.Tool.CLI/README.md) provides detailed instructions for configuring both source and target instances.
+
+### Running Your First Migration
+
+For a lift-and-shift migration, use the migration tool's default configuration:
+
+1. **Set up your instances** - Ensure both source and target instances are accessible. The source instance must be running. The target instance must not be running.
+
+2. **Configure connections** - Update `appsettings.json` in the `Migration.Tool.CLI` project with database connection strings.
+
+3. **Build the solution** - Open `Migration.Tool.sln` in your IDE and build in Release mode for optimal performance. (Use Debug mode when developing custom migrations or troubleshooting issues.)
+
+4. **Run the migration** - Navigate to the output directory and execute the CLI tool:
+
+   ```powershell
+   cd .\Migration.Tool.CLI\bin\Release\net8.0
+   .\Migration.Tool.CLI.exe migrate --sites --users --page-types --pages
+   ```
+
+   For a complete migration with all data types:
+
+   ```powershell
+   .\Migration.Tool.CLI.exe migrate
+   --sites --custom-modules --users --settings-keys --page-types --pages --type-restrictions --contact-management --forms --media-libraries --data-protection --custom-tables --members --categories
+   ```
+
+5. **Review results** - Check console [output and log files](./Migration.Tool.CLI/README.md#logging) for issues or manual steps:
+   - **Console** shows real-time progress and results
+   - **Log files** capture detailed execution logs (`logs\log-<date>.txt`)
+
+> [!NOTE]
+> **What gets migrated?** See [Supported Data](./docs/Supported-Data.md) for a complete list of data types and any limitations.
+
+> [!TIP]
+> **First-time user?** See the **[Migration CLI Setup Guide](./Migration.Tool.CLI/README.md)** for detailed instructions on configuring source and target instances, understanding `appsettings.json` options, and command parameters.
+>
+> **Learning by doing?** Follow our [Upgrade Walkthrough](https://docs.kentico.com/x/upgrade_walkthrough_guides) - a step-by-step, code-along guide using the Dancing Goat sample site. The guide covers both data migration and code adjustments to display a Kentico Xperience 13 page seamlessly in Xperience by Kentico.
+
+### When You Need Customization
+
+The migration tool supports configuration-driven and code-driven customization.
+
+You typically need customization to achieve custom project-specific behavior, and when you want to adjust your content model to take full advantage of Xperience by Kentico features (recommended).
+
+Start with the [Customization Guide](./docs/Customization-Guide.md) for an overview of options and a decision flow for your migration scenario.
+
+## Library Version Matrix
+
+View all [project releases](https://github.com/Kentico/xperience-by-kentico-kentico-migration-tool/releases/).
+
+| Xperience Version | Library Version |
+| ----------------- | --------------- |
+| >= 31.7.0         | >= 4.4.0        |
+| >= 31.5.0         | >= 4.3.0        |
+| >= 31.2.0         | >= 4.2.0        |
+| >= 31.0.0         | >= 4.0.0        |
+| >= 30.12.0        | >= 3.20.0       |
+| >= 30.11.0        | >= 3.18.0       |
+| >= 30.10.1        | >= 3.16.0       |
+| >= 30.8.0         | >= 3.12.0       |
+| >= 30.6.0         | >= 3.8.0        |
+| >= 30.5.1         | >= 3.6.0        |
+| >= 30.4.0         | >= 3.4.0        |
+| >= 30.3.1         | >= 3.3.0        |
+| >= 30.2.0         | >= 3.0.0        |
+| >= 30.1.1         | >= 2.3.0        |
+| >= 30.0.0         | >= 2.0.0        |
+| >= 29.7.0         | >= 1.6.0        |
+| >= 29.6.0         | >= 1.4.0        |
+| >= 29.5.2         | >= 1.3.0        |
+| >= 29.3.3         | >= 1.2.0        |
+| >= 29.2.0         | >= 1.1.0        |
+| >= 29.1.0         | >= 1.0.0        |
+
+## Dependencies
+
+- [ASP.NET Core 8.0](https://dotnet.microsoft.com/en-us/download)
+- [Xperience by Kentico](https://docs.kentico.com/changelog)
+
+## Contributing
+
+When [creating an issue](https://github.com/Kentico/xperience-by-kentico-kentico-migration-tool/issues/new), provide all available information about the problem or error. Include the command line output log file generated by the `Migration.Tool.CLI.exe migrate` command when possible.
+
+For guidelines on contributing to Kentico open source software, see [Kentico's `CONTRIBUTING.md`](https://github.com/Kentico/.github/blob/main/CONTRIBUTING.md) and follow [Kentico's `CODE_OF_CONDUCT`](https://github.com/Kentico/.github/blob/main/CODE_OF_CONDUCT.md).
+
+Instructions and technical details for **contributing to this project** can be found in [Contributing Setup](./docs/Contributing-Setup.md).
+
+## License
+
+Distributed under the MIT License. See [`LICENSE.md`](./LICENSE.md) for more information.
+
+## Support
+
+[![7-day bug-fix policy](https://img.shields.io/badge/-7--days_bug--fixing_policy-grey?labelColor=orange&logo=data:image/svg+xml;base64,PHN2ZyBjbGFzcz0ic3ZnLWljb24iIHN0eWxlPSJ3aWR0aDogMWVtOyBoZWlnaHQ6IDFlbTt2ZXJ0aWNhbC1hbGlnbjogbWlkZGxlO2ZpbGw6IGN1cnJlbnRDb2xvcjtvdmVyZmxvdzogaGlkZGVuOyIgdmlld0JveD0iMCAwIDEwMjQgMTAyNCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik04ODguNDkgMjIyLjY4NnYtMzEuNTRsLTY1LjY3Mi0wLjk1NWgtMC4yMDVhNDY1LjcxNSA0NjUuNzE1IDAgMCAxLTE0NC4zMTUtMzEuMzM0Yy03Ny4wMDUtMzEuMTk4LTEyNi4yOTQtNjYuNzY1LTEyNi43MDMtNjcuMTA3bC0zOS44LTI4LjY3Mi0zOS4xODUgMjguNDY4Yy0yLjA0OCAxLjUwMS00OS45MDMgMzYuMDQ0LTEyNi45MDggNjcuMzFhNDQ3LjQyIDQ0Ny40MiAwIDAgMS0xNDQuNTIgMzEuMzM1bC02NS44NzcgMC45NTZ2Mzc4Ljg4YzAgODcuMDQgNDkuODM0IDE4NC42NjEgMTM3LjAxIDI2Ny44MSAzNy41NDcgMzUuODQgNzkuMjU4IDY2LjM1NSAxMjAuODMzIDg4LjIgNDMuMjggMjIuNzMzIDg0LjI0IDM0LjYxMiAxMTguODUyIDM0LjYxMiAzNC40MDYgMCA3NS43NzYtMTIuMTUyIDExOS42MDMtMzUuMTU4YTU0Ny45NzcgNTQ3Ljk3NyAwIDAgMCAxMjAuMDEzLTg3LjY1NCA1MTUuMjA5IDUxNS4yMDkgMCAwIDAgOTYuMTg4LTEyMi44OGMyNy4xMDItNDkuNTYyIDQwLjgyMy05OC4zMDQgNDAuODIzLTE0NC45OTlsLTAuMTM2LTM0Ny4yMDR6TTUxMC4wOSAxNDMuNDI4bDEuNzA2LTEuMzY1IDEuNzc1IDEuMzY1YzUuODAzIDQuMTY1IDU5LjUyOSA0MS44NDggMTQwLjM1NiA3NC43NTIgNzkuMTkgMzIuMDg2IDE1My42IDM1LjYzNSAxNjcuNjYzIDM2LjA0NWwyLjU5NCAwLjA2OCAwLjIwNSAzMTUuNzM0YzAuMTM3IDY5LjQ5NS00Mi41OTggMTUwLjE4Ni0xMTcuMDc3IDIyMS40NTdDNjQxLjU3IDg1NC4yODkgNTYzLjEzIDg5Ni40NzggNTEyIDg5Ni40NzhjLTIzLjY4OSAwLTU1LjU3LTkuODk5LTg5LjcwMi0yNy43ODVhNDc4LjgyMiA0NzguODIyIDAgMCAxLTEwNS42MDktNzcuMjc4QzI0Mi4yMSA3MjAuMjEzIDE5OS40NzUgNjM5LjUyMiAxOTkuNDc1IDU2OS44OVYyNTQuMjI1bDIuNzMtMC4xMzZjMy4yNzggMCA4Mi42MDQtMS41MDIgMTY3LjY2NC0zNS45NzdhNzM5Ljk0MiA3MzkuOTQyIDAgMCAwIDE0MC4yMi03NC42MTV2LTAuMDY5eiIgIC8+PHBhdGggZD0iTTcxMy4zMTggMzY4LjY0YTMyLjIyMiAzMi4yMjIgMCAwIDAtNDUuMzI5IDBMNDQ5LjE5NSA1ODcuNDM1bC05My4xODQtOTMuMTE2YTMyLjIyMiAzMi4yMjIgMCAwIDAtNDUuMzMgMCAzMi4yMjIgMzIuMjIyIDAgMCAwIDAgNDUuMjZsMTE1Ljg1IDExNS44NWEzMi4yOSAzMi4yOSAwIDAgMCA0NS4zMjggMEw3MTMuMzIgNDEzLjlhMzIuMjIyIDMyLjIyMiAwIDAgMCAwLTQ1LjMzeiIgIC8+PC9zdmc+)](https://github.com/Kentico/.github/blob/main/SUPPORT.md#full-support)
+
+This project has **Full support by 7-day bug-fix policy**:
+
+- Bug fixes are applied to the latest version only (no backporting to previous releases)
+- The Migration Tool is a temporary utility designed for one-time migrations, not long-term production software
+
+To report bugs, upgrade to the latest Migration Tool version before submitting issues.
+
+See [`SUPPORT.md`](https://github.com/Kentico/.github/blob/main/SUPPORT.md#full-support) for more information.
+
+> [!IMPORTANT]
+> Before submitting a support ticket, please read about the [best practices on reporting Kentico Migration Tool and upgrade issues](https://docs.kentico.com/guides/upgrade-to-xbyk/upgrade-from-kx13/upgrade-faq#what-is-the-difference-between-the-documentation-in-the-github-repo-and-on-the-docs.kentico.com-site).
+
+## Security
+
+For any security issues, see [Kentico's `SECURITY.md`](https://github.com/Kentico/.github/blob/main/SECURITY.md).

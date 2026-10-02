@@ -9,7 +9,7 @@ public partial interface IMediaFile : ISourceModel<IMediaFile>
     int FileID { get; }
     string FileName { get; }
     string FileTitle { get; }
-    string FileDescription { get; } 
+    string FileDescription { get; }
     string FileExtension { get; }
     string FileMimeType { get; }
     string FilePath { get; }
@@ -24,7 +24,6 @@ public partial interface IMediaFile : ISourceModel<IMediaFile>
     int? FileModifiedByUserID { get; }
     DateTime FileModifiedWhen { get; }
     string? FileCustomData { get; }
-
     DateTime ReleaseDate { get; }
 
     static string ISourceModel<IMediaFile>.GetPrimaryKeyName(SemanticVersion version) => version switch

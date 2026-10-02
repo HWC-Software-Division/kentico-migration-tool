@@ -129,7 +129,7 @@ public class MigrateContactManagementCommandHandler(
             // { nameof(ContactInfo.ContactStatusId), nameof(KXO.Models.OmContact.ContactStatusId) }, // No support 2022-07-07  but needs to be mapped because of constraint
             { nameof(KX13M.OmContact.ContactNotes), nameof(ContactInfo.ContactNotes) },
             { nameof(KX13M.OmContact.ContactOwnerUserId), nameof(ContactInfo.ContactOwnerUserID) },
-            // No support 2022-07-07  { nameof(ContactInfo.ContactMonitored), nameof(KXO.Models.OmContact.ContactMonitored) },
+            { nameof(KX13M.OmContact.ContactMonitored), nameof(ContactInfo.ContactMonitored) },
             { nameof(KX13M.OmContact.ContactGuid), nameof(ContactInfo.ContactGUID) },
             { nameof(KX13M.OmContact.ContactLastModified), nameof(ContactInfo.ContactLastModified) },
             { nameof(KX13M.OmContact.ContactCreated), nameof(ContactInfo.ContactCreated) },
@@ -139,18 +139,9 @@ public class MigrateContactManagementCommandHandler(
             // No support 2022-07-07  { nameof(ContactInfo.ContactSalesForceLeadReplicationDisabled), nameof(KXO.Models.OmContact.ContactSalesForceLeadReplicationDisabled) },
             // No support 2022-07-07  { nameof(ContactInfo.ContactSalesForceLeadReplicationDateTime), nameof(KXO.Models.OmContact.ContactSalesForceLeadReplicationDateTime) },
             // No support 2022-07-07  { nameof(ContactInfo.ContactSalesForceLeadReplicationSuspensionDateTime), nameof(KXO.Models.OmContact.ContactSalesForceLeadReplicationSuspensionDateTime) },
-            { nameof(KX13M.OmContact.ContactCompanyName), nameof(ContactInfo.ContactCompanyName) },
-            // Columns supported by the current XbyK OM_Contact schema (source/target column names match,
-            // so the same name is used on both sides — case-insensitive matching handles ID/Id casing).
-            { nameof(KX13M.OmContact.ContactBirthday), nameof(KX13M.OmContact.ContactBirthday) },
-            { nameof(KX13M.OmContact.ContactStatusId), nameof(KX13M.OmContact.ContactStatusId) },
-            { nameof(KX13M.OmContact.ContactMonitored), nameof(KX13M.OmContact.ContactMonitored) },
-            { nameof(KX13M.OmContact.ContactBounces), nameof(KX13M.OmContact.ContactBounces) },
-            { nameof(KX13M.OmContact.ContactSalesForceLeadId), nameof(KX13M.OmContact.ContactSalesForceLeadId) },
-            { nameof(KX13M.OmContact.ContactSalesForceLeadReplicationDisabled), nameof(KX13M.OmContact.ContactSalesForceLeadReplicationDisabled) },
-            { nameof(KX13M.OmContact.ContactSalesForceLeadReplicationDateTime), nameof(KX13M.OmContact.ContactSalesForceLeadReplicationDateTime) },
-            { nameof(KX13M.OmContact.ContactSalesForceLeadReplicationSuspensionDateTime), nameof(KX13M.OmContact.ContactSalesForceLeadReplicationSuspensionDateTime) },
-            { nameof(KX13M.OmContact.ContactSalesForceLeadReplicationRequired), nameof(KX13M.OmContact.ContactSalesForceLeadReplicationRequired) }
+            { nameof(KX13M.OmContact.ContactCompanyName), nameof(ContactInfo.ContactCompanyName) }
+            // No support 2022-07-07  { nameof(ContactInfo.ContactSalesForceLeadReplicationRequired), nameof(KXO.Models.OmContact.ContactSalesForceLeadReplicationRequired) },
+
         };
 
         foreach (var cfi in kxpClassFacade.GetCustomizedFieldInfos(ContactInfo.TYPEINFO.ObjectClassName))
@@ -303,7 +294,6 @@ public class MigrateContactManagementCommandHandler(
             return ValueInterceptorResult.ReplaceValue(null);
         }
 
-
         return ValueInterceptorResult.DoNothing;
     }
 
@@ -319,9 +309,8 @@ public class MigrateContactManagementCommandHandler(
             { nameof(KX13M.OmActivity.ActivityContactId), nameof(ActivityInfo.ActivityContactID) },
             { nameof(KX13M.OmActivity.ActivityCreated), nameof(ActivityInfo.ActivityCreated) },
             { nameof(KX13M.OmActivity.ActivityType), nameof(ActivityInfo.ActivityType) },
-            // Supported by the current XbyK OM_Activity schema (same column name source/target).
-            { nameof(KX13M.OmActivity.ActivityItemId), nameof(KX13M.OmActivity.ActivityItemId) },
-            { nameof(KX13M.OmActivity.ActivityItemDetailId), nameof(KX13M.OmActivity.ActivityItemDetailId) },
+            // No support 2022-07-07  { nameof(ActivityInfo.ActivityItemId), nameof(KXO.Models.OmActivity.ActivityItemId) },
+            // No support 2022-07-07  { nameof(ActivityInfo.ActivityItemDetailId), nameof(KXO.Models.OmActivity.ActivityItemDetailId) },
             { nameof(KX13M.OmActivity.ActivityValue), nameof(ActivityInfo.ActivityValue) },
             { nameof(KX13M.OmActivity.ActivityUrl), nameof(ActivityInfo.ActivityURL) },
             { nameof(KX13M.OmActivity.ActivityTitle), nameof(ActivityInfo.ActivityTitle) },
@@ -445,7 +434,8 @@ public class MigrateContactManagementCommandHandler(
 
         if (columnName.Equals(nameof(KX13M.OmActivity.ActivityCulture), StringComparison.InvariantCultureIgnoreCase) && value is string cultureCode)
         {
-            return ValueInterceptorResult.ReplaceValue(ContentLanguageInfoProvider.ProviderObject.Get(cultureCode)?.ContentLanguageID);
+            var language = ContentLanguageInfo.Provider.Get().WhereEquals(nameof(ContentLanguageInfo.ContentLanguageName), cultureCode).FirstOrDefault();
+            return ValueInterceptorResult.ReplaceValue(language?.ContentLanguageID);
         }
 
         return ValueInterceptorResult.DoNothing;

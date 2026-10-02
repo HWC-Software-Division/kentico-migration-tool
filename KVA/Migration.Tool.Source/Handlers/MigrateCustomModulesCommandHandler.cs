@@ -229,7 +229,18 @@ public class MigrateCustomModulesCommandHandler(
 
                     if (cmsClass.ClassShowAsSystemTable is false)
                     {
-                        Debug.Assert(xbkDataClass.ClassTableName != null, "k12Class.ClassTableName != null");
+                        //Debug.Assert(xbkDataClass.ClassTableName != null, "k12Class.ClassTableName != null");
+
+                        if (string.IsNullOrWhiteSpace(xbkDataClass.ClassTableName))
+                        {
+                            logger.LogError(
+                                "Class {ClassName} (GUID {ClassGuid}) has no ClassTableName set - skipping coupled data migration for this class. " +
+                                "Check CMS_Class in the source database for a custom table with a missing/empty ClassTableName.",
+                                xbkDataClass.ClassName,
+                                cmsClass.ClassGUID
+                            );
+                            continue;
+                        }
 
                         XNamespace nsSchema = "http://www.w3.org/2001/XMLSchema";
                         XNamespace msSchema = "urn:schemas-microsoft-com:xml-msdata";

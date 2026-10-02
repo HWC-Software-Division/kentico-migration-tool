@@ -57,18 +57,19 @@ public class MediaFileMigratorToContentItem(
         foreach (var ksMediaFile in ksMediaFiles)
         {
             totalCount++;
-
             if (ksSites.GetOrAdd(ksMediaFile.FileSiteID, siteId => modelFacade.SelectById<ICmsSite>(siteId)) is not { } ksSite)
             {
+                //logger.LogError("Media file '{File}' site not found", ksMediaFile);
                 logger.LogError("[Media Libraries] Media file '{FileGuid}' skipped: site ID={SiteId} not found",
-                    ksMediaFile.FileGUID, ksMediaFile.FileSiteID);
+                   ksMediaFile.FileGUID, ksMediaFile.FileSiteID);
                 errorCount++;
                 continue;
             }
             if (ksMediaLibraries.GetOrAdd(ksMediaFile.FileLibraryID, libraryId => modelFacade.SelectById<IMediaLibrary>(libraryId)) is not { } ksMediaLibrary)
             {
+                //logger.LogError("Media file '{File}' library not found", ksMediaFile);
                 logger.LogError("[Media Libraries] Media file '{FileGuid}' skipped: library ID={LibraryId} not found",
-                    ksMediaFile.FileGUID, ksMediaFile.FileLibraryID);
+                   ksMediaFile.FileGUID, ksMediaFile.FileLibraryID);
                 errorCount++;
                 continue;
             }
@@ -91,7 +92,7 @@ public class MediaFileMigratorToContentItem(
             var directive = GetDirective(new(ksSite, ksMediaLibrary, ksMediaFile));
 
             var workspaceGuid = workspaceService.EnsureWorkspace(directive.WorkspaceOptions);
-            var umtContentItem = await assetFacade.FromMediaFile(ksMediaFile, ksMediaLibrary, ksSite, languageNames, workspaceGuid, directive.ContentFolderOptions);
+            var umtContentItem = await assetFacade.FromMediaFile(ksMediaFile, ksMediaLibrary, ksSite, [defaultContentLanguage.ContentLanguageName], workspaceGuid, directive.ContentFolderOptions);
 
             // Log only essential info (not entire object) to keep log readable
             logger.LogTrace("[Media Libraries] Importing '{FileName}' (Guid={FileGuid}, Library={Library})",
@@ -104,8 +105,8 @@ public class MediaFileMigratorToContentItem(
                 foreach (var item in umtContentItem.LanguageData)
                 {
                     item.UserGuid = (item.UserGuid.HasValue && userService.UserExists(item.UserGuid.Value))
-                        ? item.UserGuid
-                        : userService.DefaultAdminUser?.UserGUID;
+                    ? item.UserGuid
+                    : userService.DefaultAdminUser?.UserGUID;
                 }
             }
 
@@ -113,6 +114,7 @@ public class MediaFileMigratorToContentItem(
             {
                 case { Success: true }:
                 {
+                    //logger.LogInformation("Media file '{File}' imported", ksMediaFile.FileGUID);
                     logger.LogInformation("[Media Libraries] ✅ Imported '{FileName}' (Guid={FileGuid}, Library={Library})",
                         ksMediaFile.FileName, ksMediaFile.FileGUID, libraryLabel);
                     successCount++;
@@ -121,8 +123,9 @@ public class MediaFileMigratorToContentItem(
                 }
                 case { Success: false, Exception: { } exception }:
                 {
+                    //logger.LogError("Media file '{File}' not migrated: {Error}", ksMediaFile.FileGUID, exception);
                     logger.LogError("[Media Libraries] ❌ FAILED '{FileName}' (Guid={FileGuid}, Path={FilePath}, Library={Library}): {Error}",
-                        ksMediaFile.FileName, ksMediaFile.FileGUID, ksMediaFile.FilePath, libraryLabel, exception.Message);
+                       ksMediaFile.FileName, ksMediaFile.FileGUID, ksMediaFile.FilePath, libraryLabel, exception.Message);
                     errorCount++;
                     libraryErrorCount++;
                     break;
@@ -131,9 +134,10 @@ public class MediaFileMigratorToContentItem(
                 {
                     foreach (var validationResult in validation)
                     {
+                        //logger.LogError("Media file '{File}' not migrated: {Members}: {Error}", ksMediaFile.FileGUID, string.Join(",", validationResult.MemberNames), validationResult.ErrorMessage);
                         logger.LogError("[Media Libraries] ❌ FAILED '{FileName}' (Guid={FileGuid}, Path={FilePath}, Library={Library}) validation: {Members}: {Error}",
-                            ksMediaFile.FileName, ksMediaFile.FileGUID, ksMediaFile.FilePath, libraryLabel,
-                            string.Join(",", validationResult.MemberNames), validationResult.ErrorMessage);
+                                ksMediaFile.FileName, ksMediaFile.FileGUID, ksMediaFile.FilePath, libraryLabel,
+                                string.Join(",", validationResult.MemberNames), validationResult.ErrorMessage);
                     }
                     errorCount++;
                     libraryErrorCount++;
@@ -143,7 +147,6 @@ public class MediaFileMigratorToContentItem(
                     throw new ArgumentOutOfRangeException();
             }
         }
-
         // Final library boundary
         if (currentLibrary != null)
         {
@@ -170,7 +173,7 @@ public class MediaFileMigratorToContentItem(
         foreach (var director in directors)
         {
             director.Direct(contentItemSource, directiveFacade);
-            if (directiveFacade.Directive is not null)
+            if (directiveFacade.Directive is DropDirective)
             {
                 break;
             }

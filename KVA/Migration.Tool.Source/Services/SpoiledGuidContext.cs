@@ -55,7 +55,7 @@ public class SpoiledGuidContext(ModelFacade modelFacade, ILogger<SpoiledGuidCont
                                                  	FROM View_CMS_Tree_Joined TJI
                                                  	WHERE TJI.NodeGUID = TJ.NodeGUID
                                                  	GROUP BY NodeGUID
-                                                 	HAVING COUNT(NodeGUID) > 1
+                                                 	HAVING COUNT(DISTINCT NodeID) > 1
                                                  )
                                                  """,
                 (reader, version) => new

@@ -126,10 +126,11 @@ public class MediaLinkService(
             //    mediaLinkKind = MediaLinkKind.DirectMediaPath;
             //    inspectionIndex++;
             //}
+
             if (!string.IsNullOrWhiteSpace(globalMediaLibraryFolder)
-                && inspectionIndex >= 0
-                && inspectionIndex < spl.Length
-                && globalMediaLibraryFolder.Equals(spl[inspectionIndex], StringComparison.InvariantCultureIgnoreCase))
+               && inspectionIndex >= 0
+               && inspectionIndex < spl.Length
+               && globalMediaLibraryFolder.Equals(spl[inspectionIndex], StringComparison.InvariantCultureIgnoreCase))
             {
                 mediaKind = MediaKind.MediaFile;
             }
@@ -140,7 +141,7 @@ public class MediaLinkService(
         {
             //if (sites.FirstOrDefault(x => x.siteId == linkSiteId) is var (_, siteName, _))
             //{
-            //    if (siteName.Equals(spl[inspectionIndex], StringComparison.InvariantCultureIgnoreCase))
+            //    if (spl.Length > inspectionIndex && siteName.Equals(spl[inspectionIndex], StringComparison.InvariantCultureIgnoreCase))
             //    {
             //        // it is direct path media
             //        mediaKind = MediaKind.MediaFile;
@@ -148,6 +149,7 @@ public class MediaLinkService(
             //        inspectionIndex++;
             //    }
             //}
+
             if (sites.FirstOrDefault(x => x.siteId == linkSiteId) is var (_, siteName, _)
                 && !string.IsNullOrEmpty(siteName)
                 && inspectionIndex >= 0
@@ -230,10 +232,12 @@ public class MediaLinkService(
                 }
             }
         }
+
         if (inspectionIndex < 0 || inspectionIndex >= spl.Length)
         {
             return MatchMediaLinkResult.None;
         }
+
         if (mediaLinkKind == MediaLinkKind.None || mediaKind == MediaKind.None)
         {
             return MatchMediaLinkResult.None;

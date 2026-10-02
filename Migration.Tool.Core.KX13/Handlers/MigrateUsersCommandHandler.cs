@@ -45,7 +45,7 @@ public class MigrateUsersCommandHandler(
             protocol.FetchedSource(kx13User);
             logger.LogTrace("Migrating user {UserName} with UserGuid {UserGuid}", kx13User.UserName, kx13User.UserGuid);
 
-            var xbkUserInfo = UserInfoProvider.ProviderObject.Get(kx13User.UserGuid);
+            var xbkUserInfo = UserInfo.Provider.Get(kx13User.UserGuid);
 
             protocol.FetchedTarget(xbkUserInfo);
 
@@ -108,10 +108,11 @@ public class MigrateUsersCommandHandler(
             {
                 if (string.IsNullOrEmpty(userInfo.Email))
                 {
+                    //logger.LogError($"User {userInfo.UserName} does not have an email set. Email is required. You can set it via admin web interface of your source instance or directly in CMS_User database table.");
                     userInfo.Email = BuildDefaultEmail(userInfo.UserName);
                     logger.LogWarning($"User {userInfo.UserName} does not have an email set. Using generated email '{userInfo.Email}'. You can update it later via admin web interface or directly in CMS_User database table.");
                 }
-                UserInfoProvider.ProviderObject.Set(userInfo);
+                UserInfo.Provider.Set(userInfo);
 
                 protocol.Success(kx13User, userInfo, mapped);
                 logger.LogEntitySetAction(newInstance, userInfo);
@@ -157,7 +158,7 @@ public class MigrateUsersCommandHandler(
         {
             protocol.FetchedSource(kx13CmsRole);
 
-            var xbkRoleInfo = RoleInfoProvider.ProviderObject.Get(kx13CmsRole.RoleGuid);
+            var xbkRoleInfo = RoleInfo.Provider.Get().WhereEquals(nameof(RoleInfo.RoleGUID), kx13CmsRole.RoleGuid).FirstOrDefault();
             protocol.FetchedTarget(xbkRoleInfo);
             var mapped = roleMapper.Map(kx13CmsRole, xbkRoleInfo);
             protocol.MappedTarget(mapped);
@@ -170,7 +171,7 @@ public class MigrateUsersCommandHandler(
             ArgumentNullException.ThrowIfNull(roleInfo, nameof(roleInfo));
             try
             {
-                RoleInfoProvider.ProviderObject.Set(roleInfo);
+                RoleInfo.Provider.Set(roleInfo);
 
                 protocol.Success(kx13CmsRole, roleInfo, mapped);
                 logger.LogEntitySetAction(newInstance, roleInfo);
@@ -226,7 +227,7 @@ public class MigrateUsersCommandHandler(
                 continue;
             }
 
-            var xbkUserRole = UserRoleInfoProvider.ProviderObject.Get(xbkUserId, xbkRoleId);
+            var xbkUserRole = UserRoleInfo.Provider.Get(xbkUserId, xbkRoleId);
             protocol.FetchedTarget(xbkUserRole);
 
             var mapped = userRoleMapper.Map(kx13UserRole, xbkUserRole);
@@ -239,7 +240,7 @@ public class MigrateUsersCommandHandler(
 
                 try
                 {
-                    UserRoleInfoProvider.ProviderObject.Set(userRoleInfo);
+                    UserRoleInfo.Provider.Set(userRoleInfo);
 
                     protocol.Success(kx13UserRole, userRoleInfo, mapped);
                     logger.LogEntitySetAction(newInstance, userRoleInfo);

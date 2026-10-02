@@ -117,17 +117,18 @@ public class PrimaryKeyLocatorService(
             if (sourceType == typeof(ICmsResource))
             {
                 var sourceGuid = modelFacade.SelectById<ICmsResource>(sourceId)?.ResourceGUID;
-                targetId = ResourceInfo.Provider.Get().WhereEquals(nameof(ResourceInfo.ResourceGUID), sourceGuid).Select(x => x.ResourceID).Single();
+                //targetId = ResourceInfo.Provider.Get().WhereEquals(nameof(ResourceInfo.ResourceGUID), sourceGuid).Select(x => x.ResourceID).Single();
+                targetId = DataClassInfoProvider.GetClasses()
+                    .WhereEquals(nameof(DataClassInfo.ClassGUID), sourceGuid)
+                    .Select(x => x.ClassID)
+                    .Single();
                 return true;
             }
 
             if (sourceType == typeof(ICmsClass))
             {
                 var sourceGuid = modelFacade.SelectById<ICmsClass>(sourceId)?.ClassGUID;
-                targetId = DataClassInfoProvider.GetClasses()
-                    .WhereEquals(nameof(DataClassInfo.ClassGUID), sourceGuid)
-                    .Select(x => x.ClassID)
-                    .Single();
+                targetId = DataClassInfoProvider.GetClasses().Where(x => x.ClassGUID == sourceGuid).Select(x => x.ClassID).Single();
                 return true;
             }
 
